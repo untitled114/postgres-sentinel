@@ -1,10 +1,10 @@
-# Sport-Suite Sentinel
+# PostgreSQL Sentinel
 
-[![CI](https://github.com/untitled114/prod-simulation/actions/workflows/ci.yml/badge.svg)](https://github.com/untitled114/prod-simulation/actions/workflows/ci.yml)
+[![CI](https://github.com/untitled114/postgres-sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/untitled114/postgres-sentinel/actions/workflows/ci.yml)
 
-Production monitoring, chaos engineering, and incident response for the NBA props ML pipeline. Three-panel dashboard: War Room (live health), Training Room (model lifecycle), Performance Room (deployed model quality).
+Production PostgreSQL monitoring, chaos engineering, and automated incident response. Built on TimescaleDB with a real ML pipeline domain — detects degradation, fires chaos scenarios, auto-remediates, and tracks full incident lifecycles.
 
-Monitors the Sport-Suite consolidated database (TimescaleDB on port 5500) across 6 schemas: `players`, `games`, `teams`, `intelligence`, `axiom`, `features`.
+Three-panel dashboard: **War Room** (live DB + pipeline health), **Training Room** (model lifecycle tracking), **Performance Room** (deployed model quality metrics).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -37,7 +37,7 @@ Monitors the Sport-Suite consolidated database (TimescaleDB on port 5500) across
 ## Quick Start
 
 ```bash
-git clone https://github.com/untitled114/prod-simulation.git && cd prod-simulation
+git clone https://github.com/untitled114/postgres-sentinel.git && cd postgres-sentinel
 cp .env.example .env
 docker compose up -d
 
