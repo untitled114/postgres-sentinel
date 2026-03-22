@@ -144,46 +144,29 @@ class TestRegistry:
 
         with _mock_query([]):
             result = get_registry()
-        assert result["registry"] == []
-        assert result["timeline"] == []
+        assert result["models"] == []
 
     def test_with_data(self):
         from sentinel.api.routes.training import get_registry
 
-        registry_rows = [
+        rows = [
             {
+                "version": "v3_POINTS_20260203",
                 "market": "POINTS",
-                "production_version": "v3",
+                "status": "production",
+                "auc": 0.740,
+                "r2": 0.548,
+                "feature_count": 136,
+                "pkl_path": "nba/models/saved_xl/points_v3_*.pkl",
                 "promoted_at": "2026-02-03",
-                "previous_version": "xl",
-                "rollback_count": 0,
-            }
-        ]
-        timeline_rows = [
-            {
-                "model_version": "v3",
-                "market": "POINTS",
-                "run_date": "2026-02-03",
-                "auc_mean": 0.74,
-                "wr_mean": 0.60,
-                "promoted": True,
-                "promoted_at": "2026-02-03",
-                "rolled_back": False,
                 "rolled_back_at": None,
-                "rollback_reason": None,
+                "created_at": "2026-02-03",
             }
         ]
 
-        call_count = {"n": 0}
-
-        def _side_effect(sql, params=()):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return registry_rows
-            return timeline_rows
-
-        with patch("sentinel.api.routes.training._query", side_effect=_side_effect):
+        with _mock_query(rows):
             result = get_registry()
 
-        assert len(result["registry"]) == 1
-        assert result["registry"][0]["production_version"] == "v3"
+        assert len(result["models"]) == 1
+        assert result["models"][0]["version"] == "v3_POINTS_20260203"
+        assert result["models"][0]["status"] == "production"

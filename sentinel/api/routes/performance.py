@@ -7,27 +7,33 @@ from datetime import datetime
 
 import psycopg2
 import psycopg2.extras
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
+
+from sentinel.config.loader import load_config
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/performance", tags=["performance"])
 
-_DB_OPTS = {
-    "host": "localhost",
-    "port": 5500,
-    "dbname": "sportsuite",
-    "user": "mlb_user",
-    "password": "mlb_secure_2025",
-    "connect_timeout": 5,
-}
+
+def _get_conn(schema: str = "axiom"):
+    cfg = load_config().database
+    conn = psycopg2.connect(
+        host=cfg.host,
+        port=cfg.port,
+        dbname=cfg.name,
+        user=cfg.user,
+        password=cfg.password,
+        options=f"-c search_path={schema},public",
+        connect_timeout=cfg.connect_timeout,
+    )
+    conn.autocommit = True
+    return conn
 
 
 def _query(sql: str, params: tuple = (), schema: str = "axiom") -> list[dict]:
-    opts = {**_DB_OPTS, "options": f"-c search_path={schema},public"}
     try:
-        conn = psycopg2.connect(**opts)
-        conn.autocommit = True
+        conn = _get_conn(schema)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
@@ -39,7 +45,7 @@ def _query(sql: str, params: tuple = (), schema: str = "axiom") -> list[dict]:
 
 
 @router.get("/win-rate")
-def get_win_rate(days: int = Query(default=7, ge=1, le=90)):
+def get_win_rate(days: int = 7):  # noqa: B008
     """Daily win rate for the last N days."""
     rows = _query(
         """
@@ -59,7 +65,6 @@ def get_win_rate(days: int = Query(default=7, ge=1, le=90)):
         (days,),
     )
 
-    # Compute rolling aggregate
     total_picks = sum(r.get("total", 0) for r in rows)
     total_wins = sum(r.get("wins", 0) for r in rows)
     rolling_wr = round(total_wins / total_picks * 100, 1) if total_picks > 0 else 0
@@ -85,7 +90,6 @@ def get_conviction():
         ORDER BY avg_conviction DESC
         """)
 
-    # Map to expected labels with defaults
     dist = {"LOCKED": 0, "STRONG": 0, "WATCH": 0, "SKIP": 0}
     for r in rows:
         label = r.get("conviction_label", "").upper()
@@ -98,12 +102,13 @@ def get_conviction():
 @router.get("/summary")
 def get_summary():
     """Rollback status, prediction volume, anomalies."""
-    # Last rollback
+    # Last rollback from model_registry
     rollbacks = _query("""
-        SELECT model_version, market, rolled_back_at, rollback_reason
-        FROM validation_runs
-        WHERE rolled_back = TRUE
-        ORDER BY rolled_back_at DESC
+        SELECT version, market, rolled_back_at,
+               metadata->>'rollback_reason' AS rollback_reason
+        FROM model_registry
+        WHERE status = 'rolled_back'
+        ORDER BY rolled_back_at DESC NULLS LAST
         LIMIT 1
         """)
 
@@ -126,6 +131,14 @@ def get_summary():
         "SELECT COUNT(*) AS cnt FROM nba_line_snapshots WHERE game_date = CURRENT_DATE",
         schema="intelligence",
     )
+
+    # Active models
+    active_models = _query("""
+        SELECT version, market, auc, promoted_at
+        FROM model_registry
+        WHERE status = 'production'
+        ORDER BY market
+        """)
 
     # Latest pipeline run
     latest_run = _query("""
@@ -150,5 +163,6 @@ def get_summary():
         "props_today": props_today[0]["cnt"] if props_today else 0,
         "snapshots_today": snapshots_today[0]["cnt"] if snapshots_today else 0,
         "feature_count": feature_count,
+        "active_models": active_models,
         "latest_run": latest_run[0] if latest_run else None,
     }

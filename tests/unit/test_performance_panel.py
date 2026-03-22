@@ -122,6 +122,16 @@ class TestSummary:
                 # snapshots today
                 return [{"cnt": 15000}]
             elif call_count["n"] == 5:
+                # active models
+                return [
+                    {
+                        "version": "v3_POINTS",
+                        "market": "POINTS",
+                        "auc": 0.74,
+                        "promoted_at": "2026-02-03",
+                    }
+                ]
+            elif call_count["n"] == 6:
                 # latest pipeline run
                 return [
                     {
@@ -152,7 +162,7 @@ class TestSummary:
 
         def _side_effect(sql, params=(), schema="axiom"):
             call_count["n"] += 1
-            if call_count["n"] == 5:
+            if call_count["n"] == 6:
                 return [
                     {
                         "run_id": "x",
