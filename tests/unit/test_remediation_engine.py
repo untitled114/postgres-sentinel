@@ -36,10 +36,10 @@ class TestAttemptRemediation:
         assert result["remediated"] is False
         assert "No matching pattern" in result["reason"]
 
-    def test_blocking_pattern_matches(self, engine, mock_db):
+    def test_cpu_pattern_matches(self, engine, mock_db):
         mock_db.execute_proc.return_value = [{"sessions_killed": 2}]
         mock_db.execute_nonquery.return_value = 1
-        incident = {"id": 1, "incident_type": "blocking", "status": "detected"}
+        incident = {"id": 1, "incident_type": "cpu", "status": "detected"}
         result = engine.attempt_remediation(incident)
         assert result["remediated"] is True
         assert result["action"] == "cleanup_stale_sessions"
@@ -47,22 +47,22 @@ class TestAttemptRemediation:
     def test_action_failure_escalates(self, engine, mock_db):
         mock_db.execute_proc.side_effect = DatabaseQueryError("connection lost")
         mock_db.execute_nonquery.return_value = 1
-        incident = {"id": 1, "incident_type": "blocking", "status": "detected"}
+        incident = {"id": 1, "incident_type": "cpu", "status": "detected"}
         result = engine.attempt_remediation(incident)
         assert result["remediated"] is False
         assert result.get("escalated") is True
 
-    def test_chaos_job_failure_pattern(self, engine, mock_db):
+    def test_chaos_prediction_stale_pattern(self, engine, mock_db):
         mock_db.execute_nonquery.return_value = 1
-        incident = {"id": 2, "incident_type": "chaos:job_failure", "status": "detected"}
+        incident = {"id": 2, "incident_type": "chaos:prediction_stale", "status": "detected"}
         result = engine.attempt_remediation(incident)
         assert result["remediated"] is True
-        assert result["action"] == "restart_failed_job"
+        assert result["action"] == "trigger_pipeline_refresh"
 
     def test_status_transitions(self, engine, mock_db, mock_incidents):
         mock_db.execute_proc.return_value = [{"sessions_killed": 0}]
         mock_db.execute_nonquery.return_value = 1
-        incident = {"id": 5, "incident_type": "blocking", "status": "detected"}
+        incident = {"id": 5, "incident_type": "cpu", "status": "detected"}
         engine.attempt_remediation(incident)
 
         # Should transition to remediating, then resolved
@@ -79,9 +79,9 @@ class TestRemediateOpenIncidents:
 
     def test_filters_by_status(self, engine, mock_incidents, mock_db):
         mock_incidents.list_open.return_value = [
-            {"id": 1, "incident_type": "blocking", "status": "detected"},
-            {"id": 2, "incident_type": "blocking", "status": "remediating"},
-            {"id": 3, "incident_type": "blocking", "status": "investigating"},
+            {"id": 1, "incident_type": "cpu", "status": "detected"},
+            {"id": 2, "incident_type": "cpu", "status": "remediating"},
+            {"id": 3, "incident_type": "cpu", "status": "investigating"},
         ]
         mock_db.execute_proc.return_value = [{"sessions_killed": 0}]
         mock_db.execute_nonquery.return_value = 1
@@ -96,7 +96,7 @@ class TestRemediationLogging:
     def test_log_success(self, engine, mock_db):
         mock_db.execute_proc.return_value = [{"sessions_killed": 0}]
         mock_db.execute_nonquery.return_value = 1
-        incident = {"id": 1, "incident_type": "blocking", "status": "detected"}
+        incident = {"id": 1, "incident_type": "cpu", "status": "detected"}
         engine.attempt_remediation(incident)
 
         # Check that INSERT INTO remediation_log was called
@@ -115,7 +115,7 @@ class TestRemediationLogging:
             return 1
 
         mock_db.execute_nonquery = MagicMock(side_effect=selective_fail)
-        incident = {"id": 1, "incident_type": "blocking", "status": "detected"}
+        incident = {"id": 1, "incident_type": "cpu", "status": "detected"}
         # Should not raise
         result = engine.attempt_remediation(incident)
         assert result["remediated"] is True

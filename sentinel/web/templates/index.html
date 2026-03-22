@@ -434,6 +434,73 @@
             </div>
         </div>
 
+        <!-- ===== TAB 5: Training Room ===== -->
+        <div class="tab-panel" id="panel-training">
+            <div class="overview-grid">
+                <div class="card span-full" data-animate>
+                    <div class="card-header"><h3>Last Training Run</h3></div>
+                    <div class="card-body" id="training-latest">
+                        <p class="placeholder">Loading...</p>
+                    </div>
+                </div>
+                <div class="card span-full" data-animate style="animation-delay:60ms">
+                    <div class="card-header"><h3>Extractor Report</h3></div>
+                    <div class="card-body" id="training-extractors">
+                        <p class="placeholder">Loading...</p>
+                    </div>
+                </div>
+                <div class="card span-full" data-animate style="animation-delay:120ms">
+                    <div class="card-header"><h3>Walk-Forward Validations</h3></div>
+                    <div class="card-body" id="training-validations">
+                        <p class="placeholder">Loading...</p>
+                    </div>
+                </div>
+                <div class="card span-full" data-animate style="animation-delay:180ms">
+                    <div class="card-header"><h3>Model Registry</h3></div>
+                    <div class="card-body" id="training-registry">
+                        <p class="placeholder">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB 6: Performance Room ===== -->
+        <div class="tab-panel" id="panel-performance">
+            <div class="overview-grid">
+                <div class="card span-2" data-animate>
+                    <div class="card-header">
+                        <h3>7-Day Win Rate</h3>
+                        <span class="badge badge-info" id="perf-wr-badge">--</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container" id="perf-wr-chart" style="height:200px;position:relative;">
+                            <canvas id="wr-canvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="card" data-animate style="animation-delay:60ms">
+                    <div class="card-header"><h3>Conviction</h3></div>
+                    <div class="card-body" id="perf-conviction">
+                        <p class="placeholder">Loading...</p>
+                    </div>
+                </div>
+                <div class="card span-2" data-animate style="animation-delay:120ms">
+                    <div class="card-header"><h3>Prediction Volume (14d)</h3></div>
+                    <div class="card-body">
+                        <div class="chart-container" id="perf-volume-chart" style="height:160px;position:relative;">
+                            <canvas id="volume-canvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="card" data-animate style="animation-delay:180ms">
+                    <div class="card-header"><h3>System Status</h3></div>
+                    <div class="card-body" id="perf-summary">
+                        <p class="placeholder">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div><!-- /tab-content -->
 
     <!-- ===== Incident Detail Modal ===== -->

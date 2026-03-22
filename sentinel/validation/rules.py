@@ -56,9 +56,7 @@ class NullCheckRule(ValidationRule):
         count = rows[0]["cnt"] if rows else 0
         samples = []
         if count > 0:
-            sample_rows = db.execute_query(
-                f"SELECT * FROM {tbl} WHERE {col} IS NULL LIMIT 5"
-            )
+            sample_rows = db.execute_query(f"SELECT * FROM {tbl} WHERE {col} IS NULL LIMIT 5")
             samples = [str(r) for r in sample_rows]
         return {"passed": count == 0, "violation_count": count, "sample_values": samples}
 
@@ -85,9 +83,7 @@ class RangeCheckRule(ValidationRule):
             return {"passed": True, "violation_count": 0, "sample_values": []}
 
         where = " OR ".join(conditions)
-        rows = db.execute_query(
-            f"SELECT COUNT(*) AS cnt FROM {tbl} WHERE {where}", tuple(params)
-        )
+        rows = db.execute_query(f"SELECT COUNT(*) AS cnt FROM {tbl} WHERE {where}", tuple(params))
         count = rows[0]["cnt"] if rows else 0
         samples = []
         if count > 0:
@@ -148,8 +144,7 @@ class FreshnessRule(ValidationRule):
         col = _safe_ident(self.column)
         max_age_hours = int(self.params.get("max_age_hours", 24))
         rows = db.execute_query(
-            f"SELECT COUNT(*) AS cnt FROM {tbl} "
-            f"WHERE {col} >= NOW() - INTERVAL '%s hours'",
+            f"SELECT COUNT(*) AS cnt FROM {tbl} " f"WHERE {col} >= NOW() - INTERVAL '%s hours'",
             (max_age_hours,),
         )
         count = rows[0]["cnt"] if rows else 0

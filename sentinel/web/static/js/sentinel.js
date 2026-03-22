@@ -974,6 +974,266 @@ function signalRefresh() {
     vals.forEach(el => el.classList.add('val-blink'));
 }
 
+// --- Training Room ---
+
+async function refreshTraining() {
+    const [latest, validations, registry] = await Promise.all([
+        fetchJSON('/api/training/latest'),
+        fetchJSON('/api/training/validations'),
+        fetchJSON('/api/training/registry'),
+    ]);
+
+    // Latest training run
+    const el = document.getElementById('training-latest');
+    if (el && latest) {
+        const run = latest.run;
+        if (run) {
+            const dur = run.duration_ms ? (run.duration_ms / 1000 / 60).toFixed(1) + ' min' : '--';
+            const summary = run.summary || {};
+            el.innerHTML = `
+                <div class="stat-row">
+                    <span>Run ID</span><span class="mono">${esc(run.run_id)}</span>
+                </div>
+                <div class="stat-row">
+                    <span>Date</span><span>${esc(run.run_date)}</span>
+                </div>
+                <div class="stat-row">
+                    <span>Status</span><span>${statusBadge(run.status)}</span>
+                </div>
+                <div class="stat-row">
+                    <span>Duration</span><span>${dur}</span>
+                </div>
+                <div class="stat-row">
+                    <span>Features</span><span>${fmtNum(summary.feature_count || summary.features)}</span>
+                </div>
+                <div class="stat-row">
+                    <span>Picks Generated</span><span>${fmtNum(summary.picks_generated)}</span>
+                </div>
+            `;
+        } else {
+            el.innerHTML = '<p class="placeholder">No training runs found</p>';
+        }
+    }
+
+    // Extractors
+    const exEl = document.getElementById('training-extractors');
+    if (exEl && latest) {
+        const extractors = latest.extractors || [];
+        if (extractors.length > 0) {
+            let html = '<table class="data-table"><thead><tr><th>Extractor</th><th>Status</th><th>Duration</th><th>Metrics</th></tr></thead><tbody>';
+            for (const ext of extractors) {
+                const metrics = Object.entries(ext.metrics || {})
+                    .map(([k, v]) => `${k}: ${typeof v === 'number' ? v.toFixed(1) : v}`)
+                    .join(', ');
+                html += `<tr>
+                    <td>${esc(ext.name)}</td>
+                    <td>${statusBadge(ext.status)}</td>
+                    <td>${ext.duration_ms ? ext.duration_ms + 'ms' : '--'}</td>
+                    <td class="mono" style="font-size:.85em">${esc(metrics) || '--'}</td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            exEl.innerHTML = html;
+        } else {
+            exEl.innerHTML = '<p class="placeholder">No extractor data available</p>';
+        }
+    }
+
+    // Validations
+    const valEl = document.getElementById('training-validations');
+    if (valEl && validations) {
+        const rows = validations.validations || [];
+        if (rows.length > 0) {
+            let html = '<table class="data-table"><thead><tr><th>Version</th><th>Market</th><th>AUC</th><th>AUC Std</th><th>WR</th><th>ROI</th><th>Folds</th><th>Beats?</th><th>Status</th></tr></thead><tbody>';
+            for (const r of rows) {
+                const st = r.rolled_back ? 'rolled_back' : r.promoted ? 'production' : 'validated';
+                html += `<tr>
+                    <td>${esc(r.model_version)}</td>
+                    <td>${esc(r.market)}</td>
+                    <td>${r.auc_mean != null ? Number(r.auc_mean).toFixed(4) : '--'}</td>
+                    <td>${r.auc_std != null ? Number(r.auc_std).toFixed(4) : '--'}</td>
+                    <td>${r.wr_mean != null ? (Number(r.wr_mean) * 100).toFixed(1) + '%' : '--'}</td>
+                    <td>${r.roi_mean != null ? (Number(r.roi_mean) * 100).toFixed(1) + '%' : '--'}</td>
+                    <td>${r.fold_count || '--'}</td>
+                    <td>${r.beats_baseline ? badge('YES', 'healthy') : badge('NO', 'warning')}</td>
+                    <td>${statusBadge(st)}</td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            valEl.innerHTML = html;
+        } else {
+            valEl.innerHTML = '<p class="placeholder">No validation runs yet</p>';
+        }
+    }
+
+    // Registry
+    const regEl = document.getElementById('training-registry');
+    if (regEl && registry) {
+        const regs = registry.registry || [];
+        if (regs.length > 0) {
+            let html = '<div class="registry-cards">';
+            for (const r of regs) {
+                html += `<div class="stat-row">
+                    <span>${esc(r.market)}</span>
+                    <span>${badge(r.production_version, 'healthy')}
+                        ${r.previous_version ? '<span style="opacity:.5">prev: ' + esc(r.previous_version) + '</span>' : ''}
+                        ${r.rollback_count > 0 ? badge(r.rollback_count + ' rollbacks', 'warning') : ''}
+                    </span>
+                </div>`;
+            }
+            html += '</div>';
+            regEl.innerHTML = html;
+        } else {
+            regEl.innerHTML = '<p class="placeholder">No models registered</p>';
+        }
+    }
+}
+
+// --- Performance Room ---
+
+function drawBarChart(canvasId, labels, values, color, threshold) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const h = rect.height;
+    const pad = { top: 20, right: 10, bottom: 30, left: 40 };
+    const plotW = w - pad.left - pad.right;
+    const plotH = h - pad.top - pad.bottom;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (!values.length) return;
+
+    const maxVal = Math.max(...values, threshold || 0) * 1.1;
+    const barW = Math.max(4, plotW / values.length - 4);
+
+    // Threshold line
+    if (threshold) {
+        const ty = pad.top + plotH - (threshold / maxVal) * plotH;
+        ctx.strokeStyle = 'rgba(255,80,80,.6)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, ty);
+        ctx.lineTo(w - pad.right, ty);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(255,80,80,.8)';
+        ctx.font = '10px monospace';
+        ctx.fillText(threshold + '%', pad.left + 2, ty - 3);
+    }
+
+    // Bars
+    for (let i = 0; i < values.length; i++) {
+        const x = pad.left + (i / values.length) * plotW + 2;
+        const barH = (values[i] / maxVal) * plotH;
+        const y = pad.top + plotH - barH;
+        const c = values[i] >= (threshold || 0) ? color : 'rgba(255,80,80,.7)';
+        ctx.fillStyle = c;
+        ctx.fillRect(x, y, barW, barH);
+    }
+
+    // X labels
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    const step = Math.max(1, Math.floor(labels.length / 7));
+    for (let i = 0; i < labels.length; i += step) {
+        const x = pad.left + (i / values.length) * plotW + barW / 2;
+        ctx.fillText(labels[i].slice(5), x, h - 5);
+    }
+
+    // Y axis
+    ctx.textAlign = 'right';
+    for (let v = 0; v <= maxVal; v += Math.ceil(maxVal / 4)) {
+        const y = pad.top + plotH - (v / maxVal) * plotH;
+        ctx.fillText(v.toFixed(0), pad.left - 4, y + 3);
+    }
+}
+
+async function refreshPerformance() {
+    const [wr, conviction, summary] = await Promise.all([
+        fetchJSON('/api/performance/win-rate?days=7'),
+        fetchJSON('/api/performance/conviction'),
+        fetchJSON('/api/performance/summary'),
+    ]);
+
+    // Win rate chart
+    if (wr && wr.daily) {
+        const labels = wr.daily.map(r => r.run_date);
+        const values = wr.daily.map(r => parseFloat(r.win_rate) || 0);
+        drawBarChart('wr-canvas', labels, values, 'rgba(51,102,255,.7)', 60);
+
+        const wrBadge = document.getElementById('perf-wr-badge');
+        if (wrBadge) {
+            wrBadge.textContent = wr.rolling_win_rate + '%';
+            wrBadge.className = 'badge badge-' + (wr.rolling_win_rate >= 60 ? 'healthy' : wr.rolling_win_rate >= 52 ? 'warning' : 'critical');
+        }
+    }
+
+    // Conviction distribution
+    const convEl = document.getElementById('perf-conviction');
+    if (convEl && conviction) {
+        const dist = conviction.distribution || {};
+        const labels = ['LOCKED', 'STRONG', 'WATCH', 'SKIP'];
+        const colors = { LOCKED: 'var(--green)', STRONG: 'var(--blue)', WATCH: 'var(--yellow)', SKIP: 'var(--text-muted)' };
+        const total = labels.reduce((s, l) => s + (dist[l] || 0), 0) || 1;
+
+        let html = '';
+        for (const label of labels) {
+            const count = dist[label] || 0;
+            const pct = (count / total * 100).toFixed(0);
+            html += `<div class="stat-row">
+                <span style="color:${colors[label]}">${label}</span>
+                <span>
+                    <div class="bar-mini" style="width:${Math.max(pct, 2)}%;background:${colors[label]}"></div>
+                    ${count} (${pct}%)
+                </span>
+            </div>`;
+        }
+        convEl.innerHTML = html;
+    }
+
+    // Volume chart
+    if (summary && summary.volume_14d) {
+        const labels = summary.volume_14d.map(r => r.run_date);
+        const values = summary.volume_14d.map(r => r.picks || 0);
+        drawBarChart('volume-canvas', labels, values, 'rgba(102,204,153,.6)');
+    }
+
+    // Summary
+    const sumEl = document.getElementById('perf-summary');
+    if (sumEl && summary) {
+        let html = `
+            <div class="stat-row"><span>Props Today</span><span>${fmtNum(summary.props_today)}</span></div>
+            <div class="stat-row"><span>Snapshots Today</span><span>${fmtNum(summary.snapshots_today)}</span></div>
+            <div class="stat-row"><span>Feature Count</span><span>${summary.feature_count || '--'}</span></div>
+        `;
+        if (summary.last_rollback) {
+            html += `<div class="stat-row" style="color:var(--red)">
+                <span>Last Rollback</span>
+                <span>${esc(summary.last_rollback.model_version)} / ${esc(summary.last_rollback.market)} — ${timeAgo(summary.last_rollback.rolled_back_at)}</span>
+            </div>
+            <div class="stat-row"><span>Reason</span><span style="font-size:.85em">${esc(summary.last_rollback.rollback_reason)}</span></div>`;
+        } else {
+            html += '<div class="stat-row"><span>Last Rollback</span><span style="color:var(--green)">None</span></div>';
+        }
+        if (summary.latest_run) {
+            html += `<div class="stat-row"><span>Last Pipeline</span><span>${statusBadge(summary.latest_run.status)} ${timeAgo(summary.latest_run.started_at)}</span></div>`;
+        }
+        sumEl.innerHTML = html;
+    }
+}
+
 // --- Main Refresh Loop ---
 
 async function refreshDashboard() {
@@ -993,6 +1253,10 @@ async function refreshDashboard() {
     updatePipeline(data.pipeline || {});
     updatePostmortems(data.postmortems || []);
 
+    // Refresh new panels if active
+    if (activeTab === 'training') refreshTraining();
+    if (activeTab === 'performance') refreshPerformance();
+
     document.getElementById('last-updated').textContent =
         new Date().toLocaleTimeString();
 
@@ -1006,6 +1270,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initValidationFilters();
     refreshDashboard();
     refreshSLA();
+    // Load new panels on first visit
+    refreshTraining();
+    refreshPerformance();
     setInterval(refreshDashboard, REFRESH_INTERVAL);
     setInterval(refreshSLA, 30000);
 });

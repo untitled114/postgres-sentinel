@@ -76,16 +76,14 @@ def get_win_rate(days: int = Query(default=7, ge=1, le=90)):
 @router.get("/conviction")
 def get_conviction():
     """Today's conviction distribution."""
-    rows = _query(
-        """
+    rows = _query("""
         SELECT conviction_label, COUNT(*) AS count,
                ROUND(AVG(conviction)::numeric, 3) AS avg_conviction
         FROM axiom_conviction
         WHERE run_date = CURRENT_DATE
         GROUP BY conviction_label
         ORDER BY avg_conviction DESC
-        """
-    )
+        """)
 
     # Map to expected labels with defaults
     dist = {"LOCKED": 0, "STRONG": 0, "WATCH": 0, "SKIP": 0}
@@ -101,26 +99,22 @@ def get_conviction():
 def get_summary():
     """Rollback status, prediction volume, anomalies."""
     # Last rollback
-    rollbacks = _query(
-        """
+    rollbacks = _query("""
         SELECT model_version, market, rolled_back_at, rollback_reason
         FROM validation_runs
         WHERE rolled_back = TRUE
         ORDER BY rolled_back_at DESC
         LIMIT 1
-        """
-    )
+        """)
 
     # 14-day prediction volume
-    volume = _query(
-        """
+    volume = _query("""
         SELECT run_date, COUNT(*) AS picks
         FROM nba_prediction_history
         WHERE run_date >= CURRENT_DATE - INTERVAL '14 days'
         GROUP BY run_date
         ORDER BY run_date
-        """
-    )
+        """)
 
     # Today's props + snapshots
     props_today = _query(
@@ -134,14 +128,12 @@ def get_summary():
     )
 
     # Latest pipeline run
-    latest_run = _query(
-        """
+    latest_run = _query("""
         SELECT run_id, status, summary, started_at
         FROM pipeline_runs
         ORDER BY started_at DESC
         LIMIT 1
-        """
-    )
+        """)
 
     feature_count = None
     if latest_run:

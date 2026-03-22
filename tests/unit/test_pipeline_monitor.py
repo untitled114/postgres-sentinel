@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from sentinel.config.models import ThresholdConfig
 from sentinel.monitor.pipeline import PipelineMonitor
 

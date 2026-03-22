@@ -75,8 +75,7 @@ class JobRunner:
         """Get job run history."""
         if job_name:
             return self.db.execute_query(
-                "SELECT * FROM job_runs WHERE job_name = %s "
-                "ORDER BY started_at DESC LIMIT %s",
+                "SELECT * FROM job_runs WHERE job_name = %s " "ORDER BY started_at DESC LIMIT %s",
                 (job_name, limit),
             )
         return self.db.execute_query(

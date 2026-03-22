@@ -120,7 +120,7 @@ class TestChaosAPI:
         resp = client.get("/api/chaos")
         assert resp.status_code == 200
         scenarios = resp.json()
-        assert len(scenarios) == 13
+        assert len(scenarios) == 9
 
     def test_trigger_random(self, client):
         resp = client.post("/api/chaos/random")

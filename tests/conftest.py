@@ -50,17 +50,27 @@ class MockConnectionManager:
             return [{"line_snapshots_today": 12500}]
         if "pick_history" in sql and "conviction" in sql and "COUNT" in sql:
             return [
-                {"conviction": "LOCKED", "count": 5},
-                {"conviction": "STRONG", "count": 12},
-                {"conviction": "WATCH", "count": 8},
-                {"conviction": "SKIP", "count": 3},
+                {"conviction": "LOCKED", "cnt": 5},
+                {"conviction": "STRONG", "cnt": 12},
+                {"conviction": "WATCH", "cnt": 8},
+                {"conviction": "SKIP", "cnt": 3},
             ]
         if "pipeline_runs" in sql and "ORDER BY" in sql and "LIMIT" in sql:
             return self._tables.get("pipeline_runs", [])[-5:]
-        if "api_health_log" in sql and "DISTINCT" in sql:
+        if "api_health_log" in sql and "MAX(checked_at)" in sql:
             return [
-                {"api_name": "bettingpros", "status": "healthy", "response_ms": 250},
-                {"api_name": "draftkings", "status": "healthy", "response_ms": 180},
+                {
+                    "api_name": "bettingpros",
+                    "status": "healthy",
+                    "response_ms": 250,
+                    "checked_at": "2026-03-22",
+                },
+                {
+                    "api_name": "draftkings",
+                    "status": "healthy",
+                    "response_ms": 180,
+                    "checked_at": "2026-03-22",
+                },
             ]
         if "feature_drift_log" in sql and "drift_detected" in sql:
             return [{"drift_alerts": 0}]
@@ -83,7 +93,7 @@ class MockConnectionManager:
                 if self._tables.get("health_snapshots")
                 else []
             )
-        if "INSERT INTO incidents" in sql and "RETURNING" in sql:
+        if "INSERT INTO incidents" in sql and ("RETURNING" in sql or "OUTPUT" in sql):
             new_id = self._next_id("incidents")
             record = {
                 "id": new_id,
@@ -91,16 +101,40 @@ class MockConnectionManager:
                 "severity": params[1] if len(params) > 1 else "warning",
                 "status": "detected",
                 "title": params[2] if len(params) > 2 else "",
+                "description": params[3] if len(params) > 3 else None,
+                "dedup_key": params[4] if len(params) > 4 else None,
+                "metadata": params[5] if len(params) > 5 else None,
             }
             self._tables["incidents"].append(record)
             return [record]
-        if "incidents" in sql and "NOT IN" in sql:
+        if "SELECT TOP" in sql and "incidents" in sql and "ORDER BY id DESC" in sql:
+            # Fallback for incident creation when OUTPUT is not available
+            if self._tables.get("incidents"):
+                return [self._tables["incidents"][-1]]
+            return []
+        if "incidents" in sql and "dedup_key" in sql and "NOT IN" in sql:
+            dedup_key = params[0] if params else None
+            matches = [
+                i
+                for i in self._tables.get("incidents", [])
+                if i.get("dedup_key") == dedup_key
+                and i.get("status") not in ("resolved", "escalated")
+            ]
+            return matches[:1]
+        if "incidents" in sql and "DATEDIFF" in sql:
+            # check_escalations — return open incidents (all match timeout=0)
+            return [
+                i
+                for i in self._tables.get("incidents", [])
+                if i.get("status") in ("detected", "investigating", "remediating")
+            ]
+        if "incidents" in sql and "NOT IN" in sql and "dedup_key" not in sql:
             return [
                 i
                 for i in self._tables.get("incidents", [])
                 if i.get("status") not in ("resolved", "escalated")
             ]
-        if "incidents" in sql and "ORDER BY" in sql and "LIMIT" in sql:
+        if "incidents" in sql and "ORDER BY" in sql and ("LIMIT" in sql or "TOP" in sql):
             return self._tables.get("incidents", [])[-1:] if self._tables.get("incidents") else []
         if "incidents" in sql and "WHERE id" in sql:
             target_id = params[-1] if params else None
@@ -182,6 +216,9 @@ class MockConnectionManager:
                 "severity": params[1] if len(params) > 1 else "warning",
                 "status": "detected",
                 "title": params[2] if len(params) > 2 else "",
+                "description": params[3] if len(params) > 3 else None,
+                "dedup_key": params[4] if len(params) > 4 else None,
+                "metadata": params[5] if len(params) > 5 else None,
             }
             self._tables["incidents"].append(record)
             return 1
@@ -269,7 +306,7 @@ class MockConnectionManager:
             self._tables["health_snapshots"].append(snapshot)
             return [snapshot]
         if proc_name == "fn_cleanup_stale_sessions":
-            return [{"fn_cleanup_stale_sessions": 0}]
+            return [{"sessions_killed": 0}]
         return []
 
     def get_connection(self):

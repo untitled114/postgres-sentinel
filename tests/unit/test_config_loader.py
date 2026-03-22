@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 from sentinel.config.loader import load_config
@@ -21,7 +20,7 @@ class TestLoadConfig:
         assert any(j.name == "stale_session_cleanup" for j in config.jobs)
         # validation_rules.yaml
         assert len(config.validation_rules) > 0
-        assert any(r.name == "customers_email_not_null" for r in config.validation_rules)
+        assert any(r.name == "props_freshness" for r in config.validation_rules)
         # chaos_scenarios.yaml
         assert len(config.chaos_scenarios) > 0
         assert any(s.name == "Long Running Query" for s in config.chaos_scenarios)
@@ -31,16 +30,14 @@ class TestLoadConfig:
         with patch("sentinel.config.loader.CONFIG_DIR", tmp_path):
             config = load_config()
         assert isinstance(config, SentinelConfig)
-        assert config.database.host == "sqlserver"
+        assert config.database.host == "postgres"
         assert config.jobs == []
         assert config.validation_rules == []
         assert config.chaos_scenarios == []
 
     def test_partial_config_dir(self, tmp_path):
         """Only sentinel.yaml present — jobs/rules/chaos default to empty."""
-        (tmp_path / "sentinel.yaml").write_text(
-            "thresholds:\n  cpu_percent_warning: 55.0\n"
-        )
+        (tmp_path / "sentinel.yaml").write_text("thresholds:\n  cpu_percent_warning: 55.0\n")
         with patch("sentinel.config.loader.CONFIG_DIR", tmp_path):
             config = load_config()
         assert config.thresholds.cpu_percent_warning == 55.0
@@ -49,18 +46,16 @@ class TestLoadConfig:
     def test_env_var_substitution_in_config(self, monkeypatch, tmp_path):
         """Environment variables are substituted in YAML values."""
         monkeypatch.setenv("TEST_DB_HOST", "custom-host")
-        (tmp_path / "sentinel.yaml").write_text(
-            "database:\n  host: '${TEST_DB_HOST}'\n"
-        )
+        (tmp_path / "sentinel.yaml").write_text("database:\n  host: '${TEST_DB_HOST}'\n")
         with patch("sentinel.config.loader.CONFIG_DIR", tmp_path):
             config = load_config()
         assert config.database.host == "custom-host"
 
-    def test_kaggle_thresholds_loaded(self):
-        """New Kaggle thresholds are present in loaded config."""
+    def test_sport_suite_thresholds_loaded(self):
+        """Sport-suite thresholds are present in loaded config."""
         config = load_config()
-        assert config.thresholds.fraud_rate_warning == 1.0
-        assert config.thresholds.fraud_rate_critical == 5.0
-        assert config.thresholds.admission_emergency_rate_warning == 40.0
-        assert config.thresholds.covid_mortality_rate_warning == 15.0
-        assert config.thresholds.insurance_high_risk_pct_warning == 30.0
+        assert config.thresholds.win_rate_7d_warning == 55.0
+        assert config.thresholds.win_rate_7d_critical == 50.0
+        assert config.thresholds.line_snapshot_volume_warning == 10000
+        assert config.thresholds.prediction_staleness_hours == 4.0
+        assert config.thresholds.conviction_locked_pct_warning == 25.0

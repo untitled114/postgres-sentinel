@@ -162,19 +162,19 @@ class TestChaosEngineResilience:
 
     def test_cooldown_enforcement(self, mock_db, config):
         """Rapid-fire triggers should respect cooldown periods."""
-        engine = ChaosEngine(mock_db, IncidentManager(mock_db), config)
+        engine = ChaosEngine(mock_db, IncidentManager(mock_db))
 
         # First trigger should succeed
-        result1 = engine.trigger("Job Failure")
+        result1 = engine.trigger("Long Running Query")
         assert result1.get("triggered") is True or "triggered" in str(result1)
 
         # Immediate re-trigger should be blocked by cooldown
-        result2 = engine.trigger("Job Failure")
+        result2 = engine.trigger("Long Running Query")
         assert "cooldown" in str(result2).lower() or result2.get("triggered") is True
 
     def test_all_scenarios_trigger(self, mock_db, config):
         """Every built-in scenario should trigger without error."""
-        engine = ChaosEngine(mock_db, IncidentManager(mock_db), config)
+        engine = ChaosEngine(mock_db, IncidentManager(mock_db))
         scenarios = engine.list_scenarios()
 
         for scenario in scenarios:

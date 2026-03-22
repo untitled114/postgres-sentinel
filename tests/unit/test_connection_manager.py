@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from sentinel.config.models import DatabaseConfig
-from sentinel.core.exceptions import DatabaseConnectionError, DatabaseQueryError
+from sentinel.core.exceptions import DatabaseConnectionError
 from sentinel.db.connection import ConnectionManager
 
 
@@ -108,10 +108,12 @@ class TestExecuteNonquery:
     def test_returns_rowcount(self, mock_connect, db_config):
         mock_cursor = MagicMock()
         mock_cursor.rowcount = 3
+        # Make cursor usable as context manager (for get_connection's SET statement_timeout)
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
 
         mock_conn = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
         mock_connect.return_value = mock_conn
 
         cm = ConnectionManager(db_config)
@@ -125,16 +127,18 @@ class TestExecuteProc:
         mock_cursor = MagicMock()
         mock_cursor.description = [("id",)]
         mock_cursor.fetchall.return_value = [{"id": 1}]
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
 
         mock_conn = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
         mock_connect.return_value = mock_conn
 
         cm = ConnectionManager(db_config)
         cm.execute_proc("fn_capture_health_snapshot")
-        call_args = mock_cursor.execute.call_args[0][0]
-        assert "fn_capture_health_snapshot" in call_args
+        # Find the call that contains the function name (skip SET statement_timeout)
+        calls = [c[0][0] for c in mock_cursor.execute.call_args_list]
+        assert any("fn_capture_health_snapshot" in c for c in calls)
 
     def test_rejects_invalid_proc_name(self, db_config):
         cm = ConnectionManager(db_config)
@@ -148,10 +152,11 @@ class TestTestConnection:
         mock_cursor = MagicMock()
         mock_cursor.description = [("ok",)]
         mock_cursor.fetchall.return_value = [{"ok": 1}]
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
 
         mock_conn = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
         mock_connect.return_value = mock_conn
 
         cm = ConnectionManager(db_config)

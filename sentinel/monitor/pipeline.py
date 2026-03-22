@@ -43,9 +43,7 @@ class PipelineMonitor:
                 )
         except DatabaseQueryError as e:
             logger.warning("Failed to collect win rate metrics: %s", e)
-            metrics.update(
-                {"win_rate_7d": None, "total_picks_7d": 0, "wins_7d": 0, "losses_7d": 0}
-            )
+            metrics.update({"win_rate_7d": None, "total_picks_7d": 0, "wins_7d": 0, "losses_7d": 0})
 
         # Today's prediction count
         try:
@@ -134,13 +132,9 @@ class PipelineMonitor:
             if rows:
                 response_times = [r["response_ms"] for r in rows if r.get("response_ms")]
                 metrics["avg_api_response_ms"] = (
-                    round(sum(response_times) / len(response_times), 1)
-                    if response_times
-                    else 0.0
+                    round(sum(response_times) / len(response_times), 1) if response_times else 0.0
                 )
-                metrics["apis_down"] = sum(
-                    1 for r in rows if r.get("status") == "down"
-                )
+                metrics["apis_down"] = sum(1 for r in rows if r.get("status") == "down")
             else:
                 metrics["avg_api_response_ms"] = 0.0
                 metrics["apis_down"] = 0

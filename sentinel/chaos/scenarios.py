@@ -115,11 +115,15 @@ class ExtractorDefaultInjection(ChaosScenario):
                 (
                     str(uuid.uuid4()),
                     json.dumps({"feature_count": 0, "picks_generated": 0}),
-                    json.dumps([{
-                        "type": "feature_count_regression",
-                        "severity": "critical",
-                        "message": "CHAOS: Feature count forced to 0",
-                    }]),
+                    json.dumps(
+                        [
+                            {
+                                "type": "feature_count_regression",
+                                "severity": "critical",
+                                "message": "CHAOS: Feature count forced to 0",
+                            }
+                        ]
+                    ),
                 ),
             )
             return {"triggered": True, "detail": "Pipeline run with 0 features injected"}
@@ -137,8 +141,7 @@ class LineIngestionDrop(ChaosScenario):
     def execute(self, db: ConnectionManager) -> dict[str, Any]:
         try:
             affected = db.execute_nonquery(
-                "DELETE FROM intelligence.nba_line_snapshots "
-                "WHERE game_date = CURRENT_DATE"
+                "DELETE FROM intelligence.nba_line_snapshots " "WHERE game_date = CURRENT_DATE"
             )
             return {"triggered": True, "detail": f"Deleted {affected} line snapshots from today"}
         except DatabaseQueryError as e:
@@ -219,7 +222,10 @@ class WinRateCrash(ChaosScenario):
                         ),
                     )
                     injected += 1
-            return {"triggered": True, "detail": f"Injected {injected} predictions (45% WR x 7 days)"}
+            return {
+                "triggered": True,
+                "detail": f"Injected {injected} predictions (45% WR x 7 days)",
+            }
         except DatabaseQueryError as e:
             return {"triggered": True, "detail": f"Win rate crash partial: {e}"}
 
@@ -239,8 +245,7 @@ class PredictionStaleness(ChaosScenario):
     def execute(self, db: ConnectionManager) -> dict[str, Any]:
         try:
             affected = db.execute_nonquery(
-                "DELETE FROM axiom.nba_prediction_history "
-                "WHERE run_date = CURRENT_DATE"
+                "DELETE FROM axiom.nba_prediction_history " "WHERE run_date = CURRENT_DATE"
             )
             return {"triggered": True, "detail": f"Deleted {affected} predictions from today"}
         except DatabaseQueryError as e:

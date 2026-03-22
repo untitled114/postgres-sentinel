@@ -40,16 +40,14 @@ def _query(sql: str, params: tuple = ()) -> list[dict]:
 @router.get("/latest")
 def get_latest_training():
     """Last training run + extractor report from pipeline_runs."""
-    runs = _query(
-        """
+    runs = _query("""
         SELECT run_id, run_date, run_type, started_at, ended_at, status,
                duration_ms, tasks, summary
         FROM pipeline_runs
         WHERE run_type = 'training'
         ORDER BY started_at DESC
         LIMIT 1
-        """
-    )
+        """)
 
     if not runs:
         return {"run": None, "extractors": []}
@@ -79,40 +77,34 @@ def get_latest_training():
 @router.get("/validations")
 def get_validations():
     """Walk-forward validation results."""
-    rows = _query(
-        """
+    rows = _query("""
         SELECT id, model_version, market, run_date, auc_mean, auc_std,
                wr_mean, roi_mean, fold_count, beats_baseline,
                promoted, rolled_back, rollback_reason
         FROM validation_runs
         ORDER BY run_date DESC
         LIMIT 20
-        """
-    )
+        """)
     return {"validations": rows}
 
 
 @router.get("/registry")
 def get_registry():
     """Model registry timeline."""
-    registry = _query(
-        """
+    registry = _query("""
         SELECT market, production_version, promoted_at,
                previous_version, rollback_count
         FROM model_registry
         ORDER BY market
-        """
-    )
+        """)
 
     # Also get recent validation runs for timeline context
-    timeline = _query(
-        """
+    timeline = _query("""
         SELECT model_version, market, run_date, auc_mean, wr_mean,
                promoted, promoted_at, rolled_back, rolled_back_at, rollback_reason
         FROM validation_runs
         ORDER BY run_date DESC
         LIMIT 10
-        """
-    )
+        """)
 
     return {"registry": registry, "timeline": timeline}

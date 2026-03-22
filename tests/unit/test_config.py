@@ -54,9 +54,9 @@ class TestLoadYaml:
 class TestPydanticModels:
     def test_database_config_defaults(self):
         cfg = DatabaseConfig()
-        assert cfg.host == "sqlserver"
-        assert cfg.port == 1433
-        assert cfg.driver == "ODBC Driver 18 for SQL Server"
+        assert cfg.host == "postgres"
+        assert cfg.port == 5432
+        assert cfg.name == "sentinel"
 
     def test_threshold_config_defaults(self):
         cfg = ThresholdConfig()
@@ -65,7 +65,7 @@ class TestPydanticModels:
 
     def test_sentinel_config_minimal(self):
         cfg = SentinelConfig()
-        assert cfg.database.host == "sqlserver"
+        assert cfg.database.host == "postgres"
         assert cfg.thresholds.cpu_percent_warning == 70.0
         assert cfg.jobs == []
         assert cfg.validation_rules == []

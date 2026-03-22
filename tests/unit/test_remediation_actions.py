@@ -11,8 +11,9 @@ from sentinel.remediation.actions import (
     ACTIONS,
     cleanup_stale_sessions,
     kill_blocking_session,
-    quarantine_bad_data,
     restart_failed_job,
+    trigger_line_refresh,
+    trigger_pipeline_refresh,
 )
 
 
@@ -23,16 +24,15 @@ def mock_db():
 
 class TestKillBlockingSession:
     def test_success(self, mock_db):
-        mock_db.execute_proc.return_value = []
+        mock_db.execute_query.return_value = []
         result = kill_blocking_session(mock_db, session_id=55)
         assert result["success"] is True
         assert "55" in result["detail"]
 
     def test_failure(self, mock_db):
-        mock_db.execute_proc.side_effect = DatabaseQueryError("cannot kill system session")
+        mock_db.execute_query.side_effect = DatabaseQueryError("cannot kill system session")
         result = kill_blocking_session(mock_db, session_id=1)
         assert result["success"] is False
-        assert "Failed" in result["detail"]
 
 
 class TestCleanupStaleSessions:
@@ -61,16 +61,27 @@ class TestRestartFailedJob:
         assert result["success"] is False
 
 
-class TestQuarantineBadData:
+class TestTriggerPipelineRefresh:
     def test_success(self, mock_db):
-        mock_db.execute_proc.return_value = [{"rows_quarantined": 5}]
-        result = quarantine_bad_data(mock_db, table="orders", column="status", value="corrupted")
+        mock_db.execute_nonquery.return_value = 1
+        result = trigger_pipeline_refresh(mock_db)
         assert result["success"] is True
-        assert "5" in result["detail"]
 
     def test_failure(self, mock_db):
-        mock_db.execute_proc.side_effect = DatabaseQueryError("proc not found")
-        result = quarantine_bad_data(mock_db, table="orders", column="status", value="corrupted")
+        mock_db.execute_nonquery.side_effect = DatabaseQueryError("err")
+        result = trigger_pipeline_refresh(mock_db)
+        assert result["success"] is False
+
+
+class TestTriggerLineRefresh:
+    def test_success(self, mock_db):
+        mock_db.execute_nonquery.return_value = 1
+        result = trigger_line_refresh(mock_db)
+        assert result["success"] is True
+
+    def test_failure(self, mock_db):
+        mock_db.execute_nonquery.side_effect = DatabaseQueryError("err")
+        result = trigger_line_refresh(mock_db)
         assert result["success"] is False
 
 
@@ -80,7 +91,9 @@ class TestActionsRegistry:
             "kill_blocking_session",
             "cleanup_stale_sessions",
             "restart_failed_job",
-            "quarantine_bad_data",
+            "escalate_to_manual",
+            "trigger_pipeline_refresh",
+            "trigger_line_refresh",
         }
         assert set(ACTIONS.keys()) == expected
 

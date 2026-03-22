@@ -52,9 +52,7 @@ class HealthCollector:
 
     def get_latest(self) -> dict[str, Any] | None:
         """Get the most recent health snapshot."""
-        rows = self.db.execute_query(
-            "SELECT * FROM health_snapshots ORDER BY id DESC LIMIT 1"
-        )
+        rows = self.db.execute_query("SELECT * FROM health_snapshots ORDER BY id DESC LIMIT 1")
         return rows[0] if rows else None
 
     def get_history(self, hours: int = 1) -> list[dict[str, Any]]:
