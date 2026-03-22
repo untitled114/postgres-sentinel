@@ -1,11 +1,114 @@
 """Tests for Training Room API endpoints."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import psycopg2
 
 
 def _mock_query(rows):
     """Patch _query in training module to return fixed rows."""
     return patch("sentinel.api.routes.training._query", return_value=rows)
+
+
+class TestGetConn:
+    def test_get_conn_calls_psycopg2_connect(self):
+        from sentinel.api.routes.training import _get_conn
+
+        mock_conn = MagicMock()
+        mock_cfg = MagicMock()
+        mock_cfg.host = "localhost"
+        mock_cfg.port = 5541
+        mock_cfg.name = "cephalon_axiom"
+        mock_cfg.user = "sentinel"
+        mock_cfg.password = "pass"
+        mock_cfg.connect_timeout = 10
+
+        mock_sentinel_cfg = MagicMock()
+        mock_sentinel_cfg.database = mock_cfg
+
+        with (
+            patch("sentinel.api.routes.training.load_config", return_value=mock_sentinel_cfg),
+            patch(
+                "sentinel.api.routes.training.psycopg2.connect", return_value=mock_conn
+            ) as mock_connect,
+        ):
+            conn = _get_conn()
+
+        mock_connect.assert_called_once_with(
+            host="localhost",
+            port=5541,
+            dbname="cephalon_axiom",
+            user="sentinel",
+            password="pass",
+            options="-c search_path=axiom,public",
+            connect_timeout=10,
+        )
+        assert conn.autocommit is True
+
+    def test_get_conn_propagates_connect_error(self):
+        from sentinel.api.routes.training import _get_conn
+
+        mock_cfg = MagicMock()
+        mock_sentinel_cfg = MagicMock()
+        mock_sentinel_cfg.database = mock_cfg
+
+        with (
+            patch("sentinel.api.routes.training.load_config", return_value=mock_sentinel_cfg),
+            patch(
+                "sentinel.api.routes.training.psycopg2.connect",
+                side_effect=psycopg2.OperationalError("connection refused"),
+            ),
+        ):
+            import pytest
+
+            with pytest.raises(psycopg2.OperationalError):
+                _get_conn()
+
+
+class TestQueryHelper:
+    def test_query_returns_rows_on_success(self):
+        from sentinel.api.routes.training import _query
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [{"id": 1, "name": "test"}]
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("sentinel.api.routes.training._get_conn", return_value=mock_conn):
+            result = _query("SELECT * FROM pipeline_runs")
+
+        assert result == [{"id": 1, "name": "test"}]
+        mock_conn.close.assert_called_once()
+
+    def test_query_returns_empty_on_exception(self):
+        from sentinel.api.routes.training import _query
+
+        with patch(
+            "sentinel.api.routes.training._get_conn",
+            side_effect=Exception("DB down"),
+        ):
+            result = _query("SELECT 1")
+
+        assert result == []
+
+    def test_query_passes_params(self):
+        from sentinel.api.routes.training import _query
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("sentinel.api.routes.training._get_conn", return_value=mock_conn):
+            _query("SELECT * FROM t WHERE id = %s", (42,))
+
+        mock_cursor.execute.assert_called_once_with("SELECT * FROM t WHERE id = %s", (42,))
 
 
 class TestLatestTraining:

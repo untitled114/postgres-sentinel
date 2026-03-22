@@ -1,10 +1,136 @@
 """Tests for Performance Room API endpoints."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 def _mock_query(rows):
     return patch("sentinel.api.routes.performance._query", return_value=rows)
+
+
+class TestPerfGetConn:
+    def test_get_conn_calls_psycopg2_connect_with_schema(self):
+        from sentinel.api.routes.performance import _get_conn
+
+        mock_conn = MagicMock()
+        mock_cfg = MagicMock()
+        mock_cfg.host = "localhost"
+        mock_cfg.port = 5541
+        mock_cfg.name = "cephalon_axiom"
+        mock_cfg.user = "sentinel"
+        mock_cfg.password = "pass"
+        mock_cfg.connect_timeout = 10
+
+        mock_sentinel_cfg = MagicMock()
+        mock_sentinel_cfg.database = mock_cfg
+
+        with (
+            patch("sentinel.api.routes.performance.load_config", return_value=mock_sentinel_cfg),
+            patch(
+                "sentinel.api.routes.performance.psycopg2.connect", return_value=mock_conn
+            ) as mock_connect,
+        ):
+            conn = _get_conn(schema="intelligence")
+
+        mock_connect.assert_called_once_with(
+            host="localhost",
+            port=5541,
+            dbname="cephalon_axiom",
+            user="sentinel",
+            password="pass",
+            options="-c search_path=intelligence,public",
+            connect_timeout=10,
+        )
+        assert conn.autocommit is True
+
+    def test_get_conn_default_schema_is_axiom(self):
+        from sentinel.api.routes.performance import _get_conn
+
+        mock_conn = MagicMock()
+        mock_cfg = MagicMock()
+        mock_cfg.host = "h"
+        mock_cfg.port = 1
+        mock_cfg.name = "db"
+        mock_cfg.user = "u"
+        mock_cfg.password = "p"
+        mock_cfg.connect_timeout = 5
+
+        mock_sentinel_cfg = MagicMock()
+        mock_sentinel_cfg.database = mock_cfg
+
+        with (
+            patch("sentinel.api.routes.performance.load_config", return_value=mock_sentinel_cfg),
+            patch(
+                "sentinel.api.routes.performance.psycopg2.connect", return_value=mock_conn
+            ) as mock_connect,
+        ):
+            _get_conn()
+
+        call_kwargs = mock_connect.call_args[1]
+        assert call_kwargs["options"] == "-c search_path=axiom,public"
+
+
+class TestPerfQueryHelper:
+    def test_query_returns_rows_on_success(self):
+        from sentinel.api.routes.performance import _query
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [{"cnt": 42}]
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("sentinel.api.routes.performance._get_conn", return_value=mock_conn):
+            result = _query("SELECT COUNT(*) AS cnt FROM predictions")
+
+        assert result == [{"cnt": 42}]
+        mock_conn.close.assert_called_once()
+
+    def test_query_returns_empty_on_exception(self):
+        from sentinel.api.routes.performance import _query
+
+        with patch(
+            "sentinel.api.routes.performance._get_conn",
+            side_effect=Exception("connection refused"),
+        ):
+            result = _query("SELECT 1")
+
+        assert result == []
+
+    def test_query_passes_schema_to_get_conn(self):
+        from sentinel.api.routes.performance import _query
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch(
+            "sentinel.api.routes.performance._get_conn", return_value=mock_conn
+        ) as mock_get_conn:
+            _query("SELECT 1", schema="intelligence")
+
+        mock_get_conn.assert_called_once_with("intelligence")
+
+    def test_query_passes_params(self):
+        from sentinel.api.routes.performance import _query
+
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("sentinel.api.routes.performance._get_conn", return_value=mock_conn):
+            _query("SELECT * FROM t WHERE days = %s", (7,))
+
+        mock_cursor.execute.assert_called_once_with("SELECT * FROM t WHERE days = %s", (7,))
 
 
 class TestWinRate:

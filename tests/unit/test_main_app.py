@@ -201,3 +201,64 @@ class TestMonitorLoop:
         state.incidents.create.assert_called()
         call_kwargs = state.incidents.create.call_args
         assert "win_rate_7d" in str(call_kwargs)
+
+
+class TestLifespan:
+    @pytest.mark.asyncio
+    async def test_lifespan_db_ready_immediately(self):
+        """Lifespan starts background tasks when DB connects on first attempt."""
+        from sentinel.api.main import lifespan
+
+        mock_state = MagicMock()
+        mock_state.db.test_connection.return_value = True
+        mock_state.config.monitor.poll_interval_seconds = 999
+        mock_state.jobs.run_loop = MagicMock(return_value=asyncio.sleep(999))
+        mock_state.jobs.stop = MagicMock()
+
+        with patch("sentinel.api.main.get_state", return_value=mock_state):
+            with patch("sentinel.api.main._monitor_loop", return_value=asyncio.sleep(999)):
+                async with lifespan(app):
+                    # Inside the lifespan — tasks should be started
+                    mock_state.db.test_connection.assert_called()
+                # Exiting lifespan — shutdown
+                mock_state.jobs.stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_db_never_connects(self):
+        """Lifespan handles case where DB never connects within 30 attempts."""
+        from sentinel.api.main import lifespan
+
+        mock_state = MagicMock()
+        mock_state.db.test_connection.return_value = False
+        mock_state.config.monitor.poll_interval_seconds = 999
+        mock_state.jobs.run_loop = MagicMock(return_value=asyncio.sleep(999))
+        mock_state.jobs.stop = MagicMock()
+
+        with (
+            patch("sentinel.api.main.get_state", return_value=mock_state),
+            patch("sentinel.api.main._monitor_loop", return_value=asyncio.sleep(999)),
+            patch("sentinel.api.main.asyncio.sleep", return_value=None),
+        ):
+            async with lifespan(app):
+                # Should have tried 30 times
+                assert mock_state.db.test_connection.call_count == 30
+            mock_state.jobs.stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_db_connects_on_third_attempt(self):
+        """Lifespan retries and succeeds on 3rd attempt."""
+        from sentinel.api.main import lifespan
+
+        mock_state = MagicMock()
+        mock_state.db.test_connection.side_effect = [False, False, True]
+        mock_state.config.monitor.poll_interval_seconds = 999
+        mock_state.jobs.run_loop = MagicMock(return_value=asyncio.sleep(999))
+        mock_state.jobs.stop = MagicMock()
+
+        with (
+            patch("sentinel.api.main.get_state", return_value=mock_state),
+            patch("sentinel.api.main._monitor_loop", return_value=asyncio.sleep(999)),
+            patch("sentinel.api.main.asyncio.sleep", return_value=None),
+        ):
+            async with lifespan(app):
+                assert mock_state.db.test_connection.call_count == 3
