@@ -1,247 +1,124 @@
 rules:
-  # --- NULL checks ---
-  - name: "customers_email_not_null"
-    type: "null_check"
-    table: "customers"
-    column: "email"
-    severity: "critical"
-    description: "Customer email must never be NULL"
-
-  - name: "customers_name_not_null"
-    type: "null_check"
-    table: "customers"
-    column: "name"
-    severity: "critical"
-    description: "Customer name must never be NULL"
-
-  - name: "orders_total_not_null"
-    type: "null_check"
-    table: "orders"
-    column: "total_amount"
-    severity: "critical"
-    description: "Order total must never be NULL"
-
-  # --- Range checks ---
-  - name: "orders_total_positive"
-    type: "range_check"
-    table: "orders"
-    column: "total_amount"
-    severity: "warning"
-    params:
-      min: 0
-      max: 100000
-    description: "Order total should be between 0 and 100,000"
-
-  - name: "order_items_quantity_valid"
-    type: "range_check"
-    table: "order_items"
-    column: "quantity"
-    severity: "warning"
-    params:
-      min: 1
-      max: 1000
-    description: "Item quantity should be between 1 and 1,000"
-
-  - name: "order_items_price_valid"
-    type: "range_check"
-    table: "order_items"
-    column: "unit_price"
-    severity: "warning"
-    params:
-      min: 0.01
-      max: 10000
-    description: "Unit price should be between $0.01 and $10,000"
-
-  # --- Referential integrity ---
-  - name: "orders_customer_exists"
-    type: "referential"
-    table: "orders"
-    column: "customer_id"
-    severity: "critical"
-    params:
-      ref_table: "customers"
-      ref_column: "id"
-    description: "Every order must reference a valid customer"
-
-  - name: "order_items_order_exists"
-    type: "referential"
-    table: "order_items"
-    column: "order_id"
-    severity: "critical"
-    params:
-      ref_table: "orders"
-      ref_column: "id"
-    description: "Every line item must reference a valid order"
-
-  # --- Duplicate checks ---
-  - name: "customers_email_unique"
-    type: "duplicate"
-    table: "customers"
-    column: "email"
-    severity: "warning"
-    params:
-      columns: ["email"]
-    description: "Customer emails should be unique"
-
-  # --- Custom SQL ---
-  - name: "orders_amount_matches_items"
-    type: "custom_sql"
-    table: "orders"
-    severity: "warning"
-    params:
-      sql: >
-        SELECT COUNT(*) AS violation_count
-        FROM orders o
-        WHERE o.total_amount <= 0
-          AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id)
-    description: "Orders with items should have positive totals"
-
   # =========================================================================
-  # Healthcare Validation Rules
+  # Data Freshness — is the pipeline producing data?
   # =========================================================================
 
-  # --- HIPAA / PHI compliance ---
-  - name: "patients_member_id_not_null"
-    type: "null_check"
-    table: "patients"
-    column: "member_id"
-    severity: "critical"
-    description: "Patient member_id is required for HIPAA-compliant identification"
-
-  - name: "patients_dob_not_null"
-    type: "null_check"
-    table: "patients"
-    column: "date_of_birth"
-    severity: "critical"
-    description: "Patient date of birth required for age-based formulary rules"
-
-  - name: "patients_member_id_unique"
-    type: "duplicate"
-    table: "patients"
-    column: "member_id"
-    severity: "critical"
-    params:
-      columns: ["member_id"]
-    description: "Member IDs must be unique across all patients"
-
-  # --- Format validation ---
-  - name: "medications_ndc_format"
-    type: "custom_sql"
-    table: "medications"
-    severity: "critical"
-    params:
-      sql: >
-        SELECT COUNT(*) AS violation_count
-        FROM medications
-        WHERE LEN(ndc_code) <> 11 OR ndc_code LIKE '%[^0-9]%'
-    description: "NDC codes must be exactly 11 digits"
-
-  - name: "providers_npi_format"
-    type: "custom_sql"
-    table: "providers"
-    severity: "critical"
-    params:
-      sql: >
-        SELECT COUNT(*) AS violation_count
-        FROM providers
-        WHERE LEN(npi) <> 10 OR npi LIKE '%[^0-9]%'
-    description: "NPI numbers must be exactly 10 digits"
-
-  # --- Referential integrity (healthcare) ---
-  - name: "prescriptions_patient_exists"
-    type: "referential"
-    table: "prescriptions"
-    column: "patient_id"
-    severity: "critical"
-    params:
-      ref_table: "patients"
-      ref_column: "id"
-    description: "Every prescription must reference a valid patient"
-
-  - name: "prescriptions_provider_exists"
-    type: "referential"
-    table: "prescriptions"
-    column: "provider_id"
-    severity: "critical"
-    params:
-      ref_table: "providers"
-      ref_column: "id"
-    description: "Every prescription must reference a licensed provider"
-
-  - name: "claims_patient_exists"
-    type: "referential"
-    table: "pharmacy_claims"
-    column: "patient_id"
-    severity: "critical"
-    params:
-      ref_table: "patients"
-      ref_column: "id"
-    description: "Every pharmacy claim must reference a valid patient"
-
-  # --- Business rule range checks ---
-  - name: "claims_quantity_valid"
-    type: "range_check"
-    table: "pharmacy_claims"
-    column: "quantity_dispensed"
-    severity: "warning"
-    params:
-      min: 1
-      max: 1000
-    description: "Dispensed quantity should be between 1 and 1,000 units"
-
-  - name: "claims_days_supply_valid"
-    type: "range_check"
-    table: "pharmacy_claims"
-    column: "days_supply"
-    severity: "warning"
-    params:
-      min: 1
-      max: 365
-    description: "Days supply should be between 1 and 365 days"
-
-  - name: "claims_ingredient_cost_valid"
-    type: "range_check"
-    table: "pharmacy_claims"
-    column: "ingredient_cost"
-    severity: "warning"
-    params:
-      min: 0
-      max: 100000
-    description: "Ingredient cost should be between $0 and $100,000"
-
-  # --- Data freshness ---
-  - name: "claims_freshness"
+  - name: "props_freshness"
     type: "freshness"
-    table: "pharmacy_claims"
-    column: "created_at"
+    table: "intelligence.nba_props_xl"
+    column: "fetch_timestamp"
+    severity: "critical"
+    params:
+      max_age_hours: 4
+    description: "Props must have inserts within 4hrs on game days"
+
+  - name: "line_snapshots_freshness"
+    type: "freshness"
+    table: "intelligence.nba_line_snapshots"
+    column: "snapshot_at"
+    severity: "critical"
+    params:
+      max_age_hours: 4
+    description: "Line snapshots must be captured within 4hrs"
+
+  # =========================================================================
+  # Volume Checks — are we getting enough data?
+  # =========================================================================
+
+  - name: "line_snapshot_volume"
+    type: "custom_sql"
+    severity: "critical"
+    description: "15K+ snapshots expected per game day"
+    params:
+      sql: >
+        SELECT CASE WHEN COUNT(*) < 15000 THEN 1 ELSE 0 END AS violation_count
+        FROM intelligence.nba_line_snapshots
+        WHERE game_date = CURRENT_DATE
+
+  - name: "book_coverage_minimum"
+    type: "custom_sql"
     severity: "warning"
+    description: "At least 5 sportsbooks should have data in last 6 hours"
     params:
-      max_age_hours: 48
-    description: "Pharmacy claims should be loaded within 48 hours"
+      sql: >
+        SELECT CASE WHEN COUNT(DISTINCT book_name) < 5 THEN 1 ELSE 0 END AS violation_count
+        FROM intelligence.nba_line_snapshots
+        WHERE snapshot_at >= NOW() - INTERVAL '6 hours'
 
-  # --- Adherence bounds ---
-  - name: "adherence_pdc_bounds"
+  # =========================================================================
+  # Prediction Quality — are model outputs sane?
+  # =========================================================================
+
+  - name: "probability_bounds"
     type: "custom_sql"
-    table: "patient_adherence"
     severity: "critical"
+    description: "Calibrated probabilities must be 0.35-0.95 (extremes indicate bugs)"
     params:
       sql: >
         SELECT COUNT(*) AS violation_count
-        FROM patient_adherence
-        WHERE pdc_ratio < 0 OR pdc_ratio > 1
-    description: "PDC ratio must be between 0.0 and 1.0"
+        FROM axiom.nba_prediction_history
+        WHERE run_date = CURRENT_DATE
+          AND (p_over < 0.35 OR p_over > 0.95)
 
-  # --- Controlled substance audit ---
-  - name: "controlled_substance_dea_required"
-    type: "custom_sql"
-    table: "prescriptions"
+  - name: "prediction_model_version_not_null"
+    type: "null_check"
+    table: "axiom.nba_prediction_history"
+    column: "model_version"
     severity: "critical"
+    description: "Every prediction must have a model version"
+
+  # =========================================================================
+  # Pipeline Health — is the orchestration working?
+  # =========================================================================
+
+  - name: "feature_count_regression"
+    type: "custom_sql"
+    severity: "critical"
+    description: "Pipeline must produce at least 102 features (XL baseline)"
     params:
       sql: >
         SELECT COUNT(*) AS violation_count
-        FROM prescriptions rx
-        INNER JOIN medications m ON m.id = rx.medication_id
-        INNER JOIN providers pr ON pr.id = rx.provider_id
-        WHERE m.dea_schedule IS NOT NULL
-          AND (pr.dea_number IS NULL OR LEN(pr.dea_number) = 0)
-    description: "Controlled substance prescriptions require provider DEA number"
+        FROM axiom.pipeline_runs
+        WHERE run_date = CURRENT_DATE
+          AND (summary->>'feature_count')::int < 102
+
+  - name: "conviction_distribution_check"
+    type: "custom_sql"
+    severity: "warning"
+    description: "LOCKED > 20% signals filter degradation"
+    params:
+      sql: >
+        SELECT CASE
+          WHEN COUNT(*) > 0 AND
+               100.0 * SUM(CASE WHEN conviction_label = 'LOCKED' THEN 1 ELSE 0 END) / COUNT(*) > 20
+          THEN 1 ELSE 0 END AS violation_count
+        FROM axiom.axiom_conviction
+        WHERE run_date = CURRENT_DATE
+
+  # =========================================================================
+  # Model Registry — is the deployed model healthy?
+  # =========================================================================
+
+  - name: "model_rollback_detection"
+    type: "custom_sql"
+    severity: "critical"
+    description: "Detect unexpected rollbacks in last 24hrs"
+    params:
+      sql: >
+        SELECT COUNT(*) AS violation_count
+        FROM axiom.model_registry
+        WHERE rolled_back_at > NOW() - INTERVAL '24 hours'
+
+  - name: "seven_day_win_rate"
+    type: "custom_sql"
+    severity: "high"
+    description: "7-day rolling WR below 60% signals model degradation"
+    params:
+      sql: >
+        SELECT CASE
+          WHEN COUNT(*) > 0 AND
+               AVG(CASE WHEN is_hit THEN 1.0 ELSE 0.0 END) < 0.60
+          THEN 1 ELSE 0 END AS violation_count
+        FROM axiom.nba_prediction_history
+        WHERE is_hit IS NOT NULL
+          AND run_date > CURRENT_DATE - 7

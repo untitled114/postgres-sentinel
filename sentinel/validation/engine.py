@@ -53,7 +53,7 @@ class ValidationEngine:
             self.db.execute_nonquery(
                 "INSERT INTO validation_results (rule_name, rule_type, table_name, column_name, "
                 "passed, severity, violation_count, sample_values, description) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     result["rule_name"],
                     result["rule_type"],
@@ -74,10 +74,10 @@ class ValidationEngine:
     def get_scorecard(self) -> dict[str, Any]:
         """Generate a scorecard from the latest run of each rule."""
         rows = self.db.execute_query(
-            "WITH LatestRun AS ("
+            "WITH latest_run AS ("
             "  SELECT *, ROW_NUMBER() OVER (PARTITION BY rule_name ORDER BY executed_at DESC) AS rn"
             "  FROM validation_results"
-            ") SELECT * FROM LatestRun WHERE rn = 1 ORDER BY passed, severity DESC"
+            ") SELECT * FROM latest_run WHERE rn = 1 ORDER BY passed, severity DESC"
         )
 
         total = len(rows)
@@ -99,5 +99,5 @@ class ValidationEngine:
     def get_recent_results(self, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent validation results."""
         return self.db.execute_query(
-            "SELECT TOP (?) * FROM validation_results ORDER BY executed_at DESC", (limit,)
+            "SELECT * FROM validation_results ORDER BY executed_at DESC LIMIT %s", (limit,)
         )

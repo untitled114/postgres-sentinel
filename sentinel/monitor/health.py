@@ -1,4 +1,4 @@
-"""Health collector — reads DMVs, saves snapshots, evaluates thresholds."""
+"""Health collector — reads PostgreSQL stats, saves snapshots, evaluates thresholds."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class HealthCollector:
-    """Collects health metrics from SQL Server DMVs and evaluates thresholds."""
+    """Collects health metrics from PostgreSQL and evaluates thresholds."""
 
     def __init__(self, db: ConnectionManager, config: SentinelConfig):
         self.db = db
@@ -23,9 +23,9 @@ class HealthCollector:
         self.thresholds = config.thresholds
 
     def collect_snapshot(self) -> dict[str, Any]:
-        """Run sp_capture_health_snapshot and evaluate thresholds."""
+        """Run fn_capture_health_snapshot and evaluate thresholds."""
         try:
-            rows = self.db.execute_proc("sp_capture_health_snapshot")
+            rows = self.db.execute_proc("fn_capture_health_snapshot")
             if not rows:
                 return self._error_snapshot("No data returned from health snapshot")
             snapshot = rows[0]
@@ -40,7 +40,7 @@ class HealthCollector:
         if snapshot.get("id"):
             try:
                 self.db.execute_nonquery(
-                    "UPDATE health_snapshots SET status = ?, details = ? WHERE id = ?",
+                    "UPDATE health_snapshots SET status = %s, details = %s WHERE id = %s",
                     (status, json.dumps(alerts), snapshot["id"]),
                 )
             except DatabaseQueryError as e:
@@ -52,24 +52,28 @@ class HealthCollector:
 
     def get_latest(self) -> dict[str, Any] | None:
         """Get the most recent health snapshot."""
-        rows = self.db.execute_query("SELECT TOP 1 * FROM health_snapshots ORDER BY id DESC")
+        rows = self.db.execute_query(
+            "SELECT * FROM health_snapshots ORDER BY id DESC LIMIT 1"
+        )
         return rows[0] if rows else None
 
     def get_history(self, hours: int = 1) -> list[dict[str, Any]]:
         """Get health snapshot history for the last N hours."""
         return self.db.execute_query(
             "SELECT * FROM health_snapshots "
-            "WHERE captured_at >= DATEADD(HOUR, ?, SYSUTCDATETIME()) "
+            "WHERE captured_at >= NOW() - INTERVAL '%s hours' "
             "ORDER BY captured_at DESC",
-            (-hours,),
+            (hours,),
         )
 
     def get_sql_health(self) -> dict[str, Any]:
-        """Quick SQL Server connectivity and version check."""
+        """Quick PostgreSQL connectivity and version check."""
         try:
             rows = self.db.execute_query(
-                "SELECT @@VERSION AS version, @@SERVERNAME AS server_name, "
-                "DB_NAME() AS current_db, SYSUTCDATETIME() AS server_time"
+                "SELECT version() AS version, "
+                "current_setting('server_version') AS server_version, "
+                "current_database() AS current_db, "
+                "NOW() AS server_time"
             )
             return {"connected": True, **rows[0]} if rows else {"connected": False}
         except DatabaseQueryError as e:
@@ -142,23 +146,54 @@ class HealthCollector:
                 }
             )
 
-        blocking = snapshot.get("blocking_count") or 0
-        if blocking >= t.blocking_chain_critical:
+        lock_wait = snapshot.get("lock_wait_count") or 0
+        if lock_wait >= t.lock_wait_critical:
             alerts.append(
                 {
-                    "metric": "blocking",
+                    "metric": "lock_wait",
                     "level": "critical",
-                    "value": blocking,
-                    "threshold": t.blocking_chain_critical,
+                    "value": lock_wait,
+                    "threshold": t.lock_wait_critical,
                 }
             )
-        elif blocking >= t.blocking_chain_warning:
+        elif lock_wait >= t.lock_wait_warning:
             alerts.append(
                 {
-                    "metric": "blocking",
+                    "metric": "lock_wait",
                     "level": "warning",
-                    "value": blocking,
-                    "threshold": t.blocking_chain_warning,
+                    "value": lock_wait,
+                    "threshold": t.lock_wait_warning,
+                }
+            )
+
+        dead_tuple = snapshot.get("dead_tuple_ratio") or 0
+        if dead_tuple >= t.dead_tuple_ratio_critical:
+            alerts.append(
+                {
+                    "metric": "dead_tuple_ratio",
+                    "level": "critical",
+                    "value": dead_tuple,
+                    "threshold": t.dead_tuple_ratio_critical,
+                }
+            )
+        elif dead_tuple >= t.dead_tuple_ratio_warning:
+            alerts.append(
+                {
+                    "metric": "dead_tuple_ratio",
+                    "level": "warning",
+                    "value": dead_tuple,
+                    "threshold": t.dead_tuple_ratio_warning,
+                }
+            )
+
+        cache_hit = snapshot.get("cache_hit_ratio")
+        if cache_hit is not None and cache_hit < 90.0:
+            alerts.append(
+                {
+                    "metric": "cache_hit_ratio",
+                    "level": "warning",
+                    "value": cache_hit,
+                    "threshold": 90.0,
                 }
             )
 
@@ -188,5 +223,5 @@ class HealthCollector:
             "cpu_percent": None,
             "memory_used_mb": None,
             "connection_count": None,
-            "blocking_count": None,
+            "lock_wait_count": None,
         }

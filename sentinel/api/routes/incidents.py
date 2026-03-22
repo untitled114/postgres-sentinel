@@ -51,8 +51,8 @@ def get_sla_metrics(
         - SLA breach count (critical > 60 min, warning > 4 hrs)
     """
     rows = state.db.execute_query(
-        "SELECT * FROM incidents WHERE detected_at >= DATEADD(HOUR, ?, SYSUTCDATETIME())",
-        (-hours,),
+        "SELECT * FROM incidents WHERE detected_at >= NOW() - INTERVAL '%s hours'",
+        (hours,),
     )
 
     total = len(rows)

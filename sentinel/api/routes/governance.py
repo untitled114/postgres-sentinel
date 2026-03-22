@@ -1,4 +1,4 @@
-"""Governance API routes — data catalog, PHI classification, lineage."""
+"""Governance API routes — data catalog, sensitive data classification, lineage."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from sentinel.api.schemas import (
     CatalogEntry,
     LineageEntry,
     LineageRecordRequest,
-    MaskedPatientResponse,
     PhiScanResponse,
 )
 
@@ -26,19 +25,19 @@ def get_catalog(
     return rows
 
 
-@router.get("/catalog/phi", response_model=list[CatalogEntry])
-def get_phi_columns(state=Depends(get_state)):
-    """List all columns classified as PHI."""
+@router.get("/catalog/sensitive", response_model=list[CatalogEntry])
+def get_sensitive_columns(state=Depends(get_state)):
+    """List all columns classified as sensitive (PHI/PII/credentials)."""
     rows = state.catalog.get_catalog(phi_only=True)
     return rows
 
 
 @router.post("/catalog/scan", response_model=PhiScanResponse)
 def scan_schema(
-    schema_name: str = Query("dbo", description="Schema to scan"),
+    schema_name: str = Query("public", description="Schema to scan"),
     state=Depends(get_state),
 ):
-    """Trigger a schema scan to auto-classify PHI/PII columns."""
+    """Trigger a schema scan to auto-classify sensitive columns."""
     result = state.catalog.scan_schema(schema_name=schema_name)
     return result
 
@@ -51,13 +50,6 @@ def get_lineage(
 ):
     """View ETL lineage records."""
     rows = state.catalog.get_lineage(pipeline_name=pipeline, limit=limit)
-    return rows
-
-
-@router.post("/mask-export", response_model=list[MaskedPatientResponse])
-def mask_export(state=Depends(get_state)):
-    """Export patient data with PHI fields masked for HIPAA-safe sharing."""
-    rows = state.catalog.mask_patients_for_export()
     return rows
 
 

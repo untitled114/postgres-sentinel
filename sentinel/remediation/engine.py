@@ -15,7 +15,17 @@ logger = logging.getLogger(__name__)
 # Pattern -> action mapping
 DEFAULT_PATTERNS: list[dict[str, Any]] = [
     {
-        "pattern": "blocking",
+        "pattern": "cpu",
+        "action": "cleanup_stale_sessions",
+        "params": {"idle_minutes": 5},
+    },
+    {
+        "pattern": "memory",
+        "action": "cleanup_stale_sessions",
+        "params": {"idle_minutes": 10},
+    },
+    {
+        "pattern": "lock_wait",
         "action": "cleanup_stale_sessions",
         "params": {"idle_minutes": 30},
     },
@@ -25,29 +35,64 @@ DEFAULT_PATTERNS: list[dict[str, Any]] = [
         "params": {"idle_minutes": 5},
     },
     {
+        "pattern": "prediction_staleness",
+        "action": "trigger_pipeline_refresh",
+        "params": {},
+    },
+    {
+        "pattern": "line_snapshot_volume",
+        "action": "trigger_line_refresh",
+        "params": {},
+    },
+    {
+        "pattern": "win_rate_7d",
+        "action": "escalate_to_manual",
+        "params": {},
+    },
+    {
+        "pattern": "api_response",
+        "action": "restart_failed_job",
+        "params": {"job_name": "api_health_check"},
+    },
+    {
+        "pattern": "feature_null_rate",
+        "action": "trigger_pipeline_refresh",
+        "params": {},
+    },
+    {
         "pattern": "chaos:connection_flood",
         "action": "cleanup_stale_sessions",
         "params": {"idle_minutes": 1},
     },
     {
-        "pattern": "chaos:job_failure",
-        "action": "restart_failed_job",
-        "params": {"job_name": "chaos_simulated_job"},
+        "pattern": "chaos:api_blackout",
+        "action": "trigger_line_refresh",
+        "params": {},
     },
     {
-        "pattern": "chaos:data_corruption",
-        "action": "quarantine_bad_data",
-        "params": {"table": "orders", "column": "status", "value": "corrupted"},
-    },
-    {
-        "pattern": "claim_rejection_rate",
-        "action": "quarantine_bad_data",
-        "params": {"table": "pharmacy_claims", "column": "claim_status", "value": "rejected"},
-    },
-    {
-        "pattern": "chaos:claim_volume",
+        "pattern": "chaos:dag_overlap",
         "action": "cleanup_stale_sessions",
         "params": {"idle_minutes": 1},
+    },
+    {
+        "pattern": "chaos:feature_drift",
+        "action": "escalate_to_manual",
+        "params": {},
+    },
+    {
+        "pattern": "chaos:conviction_collapse",
+        "action": "trigger_pipeline_refresh",
+        "params": {},
+    },
+    {
+        "pattern": "chaos:line_ingestion_drop",
+        "action": "trigger_line_refresh",
+        "params": {},
+    },
+    {
+        "pattern": "chaos:prediction_stale",
+        "action": "trigger_pipeline_refresh",
+        "params": {},
     },
 ]
 
@@ -125,7 +170,7 @@ class RemediationEngine:
         try:
             self.db.execute_nonquery(
                 "INSERT INTO remediation_log (incident_id, action_name, success, details) "
-                "VALUES (?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s)",
                 (
                     incident_id,
                     action_name,

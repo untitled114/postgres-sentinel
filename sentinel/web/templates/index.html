@@ -3,133 +3,454 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SQL Server Sentinel</title>
+    <title>Sport-Suite Sentinel</title>
     <link rel="stylesheet" href="/static/css/sentinel.css">
 </head>
 <body>
+    <!-- ===== Header ===== -->
     <header>
-        <h1>SQL Server Sentinel</h1>
-        <div class="header-meta">
-            <span id="status-badge" class="badge badge-unknown">--</span>
+        <div class="header-logo">
+            <svg viewBox="0 0 26 26" fill="none">
+                <rect x="1" y="1" width="24" height="24" rx="5" stroke="#3366ff" stroke-width="2"/>
+                <path d="M8 13h10M13 8v10" stroke="#3366ff" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <h1>Sport-Suite Sentinel</h1>
+        </div>
+        <div class="header-divider"></div>
+        <span class="status-dot" id="status-dot"></span>
+        <span class="header-status" id="status-text">--</span>
+        <div class="header-divider"></div>
+        <div class="header-kpis">
+            <div class="header-kpi">
+                Win Rate <span class="header-kpi-value" id="header-winrate">--</span>
+            </div>
+            <div class="header-kpi">
+                SLA <span class="header-kpi-value" id="header-sla">--</span>
+            </div>
+            <div class="header-kpi">
+                Incidents <span class="header-kpi-value" id="header-incidents">0</span>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+        <div class="header-timestamp">
+            <span class="refresh-spinner" id="refresh-spinner"></span>
             <span id="last-updated">--</span>
         </div>
     </header>
 
-    <main>
-        <!-- Health Cards -->
-        <section class="health-grid" id="health-section">
-            <div class="card metric-card" id="card-cpu">
-                <div class="metric-label">CPU</div>
-                <div class="metric-value" id="metric-cpu">--</div>
-                <div class="metric-unit">%</div>
-            </div>
-            <div class="card metric-card" id="card-memory">
-                <div class="metric-label">Memory</div>
-                <div class="metric-value" id="metric-memory">--</div>
-                <div class="metric-unit">MB</div>
-            </div>
-            <div class="card metric-card" id="card-connections">
-                <div class="metric-label">Connections</div>
-                <div class="metric-value" id="metric-connections">--</div>
-                <div class="metric-unit">active</div>
-            </div>
-            <div class="card metric-card" id="card-blocking">
-                <div class="metric-label">Blocking</div>
-                <div class="metric-value" id="metric-blocking">--</div>
-                <div class="metric-unit">chains</div>
-            </div>
-            <div class="card metric-card" id="card-long-queries">
-                <div class="metric-label">Long Queries</div>
-                <div class="metric-value" id="metric-long-queries">--</div>
-                <div class="metric-unit">&gt;30s</div>
-            </div>
-        </section>
+    <!-- ===== Tab Bar ===== -->
+    <nav class="tab-bar" id="tab-bar">
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="data-quality">Data Quality</button>
+        <button class="tab-btn" data-tab="chaos-lab">Chaos Lab</button>
+        <button class="tab-btn" data-tab="pipeline">Pipeline</button>
+        <button class="tab-btn" data-tab="training">Training Room</button>
+        <button class="tab-btn" data-tab="performance">Performance Room</button>
+        <div class="tab-indicator" id="tab-indicator"></div>
+    </nav>
 
-        <!-- Middle row: Incidents + Jobs -->
-        <section class="mid-grid">
-            <div class="card">
-                <h2>Open Incidents <span class="count-badge" id="incident-count">0</span></h2>
-                <div id="incidents-list" class="scroll-list">
-                    <p class="empty-state">No open incidents</p>
-                </div>
-            </div>
-            <div class="card">
-                <h2>Scheduled Jobs</h2>
-                <div id="jobs-list" class="scroll-list">
-                    <p class="empty-state">Loading...</p>
-                </div>
-                <h3>Recent Runs</h3>
-                <div id="job-runs-list" class="scroll-list">
-                    <p class="empty-state">No recent runs</p>
-                </div>
-            </div>
-        </section>
+    <!-- ===== Tab Content ===== -->
+    <div class="tab-content">
 
-        <!-- Healthcare Metrics -->
-        <section class="healthcare-grid" id="healthcare-section">
-            <div class="card metric-card" id="card-claims">
-                <div class="metric-label">Claims Today</div>
-                <div class="metric-value" id="metric-claims">--</div>
-                <div class="metric-unit">count</div>
-            </div>
-            <div class="card metric-card" id="card-rejection">
-                <div class="metric-label">Rejection Rate</div>
-                <div class="metric-value" id="metric-rejection">--</div>
-                <div class="metric-unit">%</div>
-            </div>
-            <div class="card metric-card" id="card-generic">
-                <div class="metric-label">Generic Rate</div>
-                <div class="metric-value" id="metric-generic">--</div>
-                <div class="metric-unit">%</div>
-            </div>
-            <div class="card metric-card" id="card-pdc">
-                <div class="metric-label">Avg PDC</div>
-                <div class="metric-value" id="metric-pdc">--</div>
-                <div class="metric-unit">ratio</div>
-            </div>
-        </section>
-
-        <!-- Bottom row: Validation + Chaos -->
-        <section class="mid-grid">
-            <div class="card">
-                <h2>Data Validation
-                    <button class="btn btn-sm" onclick="runValidation()">Run Now</button>
-                </h2>
-                <div class="scorecard" id="validation-scorecard">
-                    <div class="score-ring">
-                        <span id="score-percent">--</span><span class="score-unit">%</span>
-                    </div>
-                    <div class="score-details">
-                        <span><strong id="score-passed">0</strong> passed</span>
-                        <span><strong id="score-failed">0</strong> failed</span>
-                        <span><strong id="score-critical">0</strong> critical</span>
+        <!-- ===== TAB 1: Overview ===== -->
+        <div class="tab-panel active" id="panel-overview">
+            <div class="overview-grid">
+                <!-- Row 1: Health metrics -->
+                <div class="card metric-card health-row" id="card-cpu" data-animate style="animation-delay:0ms">
+                    <div class="health-metric">
+                        <div class="metric-label">CPU</div>
+                        <div class="ring-gauge" id="ring-cpu">
+                            <svg viewBox="0 0 80 80">
+                                <circle class="ring-bg" cx="40" cy="40" r="34"/>
+                                <circle class="ring-fill" cx="40" cy="40" r="34"
+                                    stroke-dasharray="213.6" stroke-dashoffset="213.6"/>
+                            </svg>
+                            <div class="ring-value">
+                                <span id="metric-cpu">--</span>
+                                <span class="ring-unit">%</span>
+                            </div>
+                        </div>
+                        <div class="sparkline" id="sparkline-cpu"></div>
                     </div>
                 </div>
-                <div id="validation-rules" class="scroll-list"></div>
-            </div>
-            <div class="card">
-                <h2>Chaos Engine
-                    <button class="btn btn-sm btn-danger" onclick="triggerRandomChaos()">Random</button>
-                </h2>
-                <div id="chaos-scenarios" class="scroll-list">
-                    <p class="empty-state">Loading...</p>
+
+                <div class="card metric-card health-row" id="card-memory" data-animate style="animation-delay:40ms">
+                    <div class="health-metric">
+                        <div class="metric-label">Memory</div>
+                        <div class="ring-gauge" id="ring-memory">
+                            <svg viewBox="0 0 80 80">
+                                <circle class="ring-bg" cx="40" cy="40" r="34"/>
+                                <circle class="ring-fill" cx="40" cy="40" r="34"
+                                    stroke-dasharray="213.6" stroke-dashoffset="213.6"/>
+                            </svg>
+                            <div class="ring-value">
+                                <span id="metric-memory">--</span>
+                                <span class="ring-unit">MB</span>
+                            </div>
+                        </div>
+                        <div class="sparkline" id="sparkline-memory"></div>
+                    </div>
+                </div>
+
+                <div class="card metric-card health-row" id="card-connections" data-animate style="animation-delay:80ms">
+                    <div class="health-metric">
+                        <div class="metric-label">Connections</div>
+                        <div class="metric-value" id="metric-connections">--</div>
+                        <div class="metric-unit">active</div>
+                        <div class="sparkline" id="sparkline-connections"></div>
+                    </div>
+                </div>
+
+                <div class="card metric-card health-row" id="card-locks" data-animate style="animation-delay:120ms">
+                    <div class="health-metric">
+                        <div class="metric-label">Lock Waits</div>
+                        <div class="metric-value" id="metric-locks">--</div>
+                        <div class="metric-unit">waiting</div>
+                        <div class="sparkline" id="sparkline-locks"></div>
+                    </div>
+                </div>
+
+                <div class="card metric-card health-row" id="card-cache" data-animate style="animation-delay:160ms">
+                    <div class="health-metric">
+                        <div class="metric-label">Cache Hit</div>
+                        <div class="ring-gauge" id="ring-cache">
+                            <svg viewBox="0 0 80 80">
+                                <circle class="ring-bg" cx="40" cy="40" r="34"/>
+                                <circle class="ring-fill" cx="40" cy="40" r="34"
+                                    stroke-dasharray="213.6" stroke-dashoffset="213.6"/>
+                            </svg>
+                            <div class="ring-value">
+                                <span id="metric-cache">--</span>
+                                <span class="ring-unit">%</span>
+                            </div>
+                        </div>
+                        <div class="sparkline" id="sparkline-cache"></div>
+                    </div>
+                </div>
+
+                <!-- Row 2: Incidents + SLA -->
+                <div class="card card--accent-red incidents-card" data-animate style="animation-delay:200ms">
+                    <div class="card-header">
+                        <h2>Open Incidents <span class="count-badge" id="incident-count">0</span></h2>
+                    </div>
+                    <div class="card-body scroll" id="incidents-list">
+                        <p class="empty-state">No open incidents</p>
+                    </div>
+                </div>
+
+                <div class="card card--accent-blue sla-card" data-animate style="animation-delay:240ms">
+                    <div class="card-header">
+                        <h2>SLA Metrics (24h)</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="sla-inner-grid" id="sla-metrics">
+                            <div class="sla-item">
+                                <span class="sla-value" id="sla-total">--</span>
+                                <span class="sla-label">Total</span>
+                            </div>
+                            <div class="sla-item">
+                                <span class="sla-value" id="sla-resolved">--</span>
+                                <span class="sla-label">Resolved</span>
+                            </div>
+                            <div class="sla-item">
+                                <span class="sla-value" id="sla-escalated">--</span>
+                                <span class="sla-label">Escalated</span>
+                            </div>
+                            <div class="sla-item">
+                                <span class="sla-value" id="sla-mttr">--</span>
+                                <span class="sla-label">Avg MTTR</span>
+                            </div>
+                            <div class="sla-item">
+                                <span class="sla-value" id="sla-compliance">--</span>
+                                <span class="sla-label">SLA %</span>
+                            </div>
+                            <div class="sla-item">
+                                <span class="sla-value" id="sla-auto-rate">--</span>
+                                <span class="sla-label">Auto-Fix</span>
+                            </div>
+                        </div>
+                        <div class="progress-bar" style="margin-top:12px">
+                            <div class="progress-bar-fill blue" id="sla-compliance-bar" style="width:0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 3: Postmortems + Jobs -->
+                <div class="card card--accent-purple postmortems-card" data-animate style="animation-delay:280ms">
+                    <div class="card-header">
+                        <h2>Recent Postmortems</h2>
+                    </div>
+                    <div class="card-body scroll" id="postmortems-list">
+                        <p class="empty-state">No postmortems yet</p>
+                    </div>
+                </div>
+
+                <div class="card jobs-card" data-animate style="animation-delay:320ms">
+                    <div class="card-header">
+                        <h2>Jobs &amp; Runs</h2>
+                    </div>
+                    <div class="card-body" style="padding:0">
+                        <div class="jobs-split">
+                            <div class="jobs-half">
+                                <div class="jobs-half-label">Scheduled Jobs</div>
+                                <div id="jobs-list">
+                                    <p class="empty-state">Loading...</p>
+                                </div>
+                            </div>
+                            <div class="jobs-half">
+                                <div class="jobs-half-label">Recent Runs</div>
+                                <div id="job-runs-list">
+                                    <p class="empty-state">No recent runs</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <!-- Postmortems -->
-        <section class="full-width">
-            <div class="card">
-                <h2>Recent Postmortems</h2>
-                <div id="postmortems-list" class="scroll-list">
-                    <p class="empty-state">No postmortems yet</p>
+        <!-- ===== TAB 2: Data Quality ===== -->
+        <div class="tab-panel" id="panel-data-quality">
+            <div class="dq-grid">
+                <!-- Left: Scorecard -->
+                <div class="card dq-scorecard" data-animate>
+                    <div class="card-header">
+                        <h2>Validation Score</h2>
+                        <button class="btn btn-sm" onclick="runValidation()">Run Now</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="scorecard-inner">
+                            <div class="ring-gauge ring-lg" id="ring-validation">
+                                <svg viewBox="0 0 100 100">
+                                    <circle class="ring-bg" cx="50" cy="50" r="42"/>
+                                    <circle class="ring-fill" cx="50" cy="50" r="42"
+                                        stroke-dasharray="263.9" stroke-dashoffset="263.9"/>
+                                </svg>
+                                <div class="ring-value">
+                                    <span id="score-percent">--</span>
+                                    <span class="ring-unit">%</span>
+                                </div>
+                            </div>
+                            <div class="score-stats">
+                                <div class="score-stat-row">
+                                    <span class="severity-dot info"></span>
+                                    <strong id="score-passed">0</strong> passed
+                                </div>
+                                <div class="score-stat-row">
+                                    <span class="severity-dot warning"></span>
+                                    <strong id="score-failed">0</strong> failed
+                                </div>
+                                <div class="score-stat-row">
+                                    <span class="severity-dot critical"></span>
+                                    <strong id="score-critical">0</strong> critical
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top right: Pipeline metrics -->
+                <div class="dq-healthcare" data-animate>
+                    <div class="healthcare-cards-row" id="pipeline-metrics-section">
+                        <div class="healthcare-metric-card card-winrate" id="card-winrate">
+                            <div class="hm-label">Win Rate 7D</div>
+                            <div class="hm-value"><span id="metric-winrate">--</span><span class="hm-unit">%</span></div>
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill" id="bar-winrate" style="width:0%;background:var(--green)"></div>
+                            </div>
+                        </div>
+                        <div class="healthcare-metric-card card-predictions" id="card-predictions">
+                            <div class="hm-label">Predictions Today</div>
+                            <div class="hm-value"><span id="metric-predictions">--</span></div>
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill" id="bar-predictions" style="width:0%;background:var(--cyan)"></div>
+                            </div>
+                        </div>
+                        <div class="healthcare-metric-card card-snapshots" id="card-snapshots">
+                            <div class="hm-label">Line Snapshots</div>
+                            <div class="hm-value"><span id="metric-snapshots">--</span></div>
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill" id="bar-snapshots" style="width:0%;background:var(--blue)"></div>
+                            </div>
+                        </div>
+                        <div class="healthcare-metric-card card-drift" id="card-drift">
+                            <div class="hm-label">Drift Alerts</div>
+                            <div class="hm-value"><span id="metric-drift">--</span></div>
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill red" id="bar-drift" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom right: Validation rules table -->
+                <div class="card dq-rules" data-animate>
+                    <div class="card-header">
+                        <h2>Validation Rules</h2>
+                        <div class="filter-pills" id="validation-filters">
+                            <button class="pill active" data-filter="all">All</button>
+                            <button class="pill" data-filter="passed">Passed</button>
+                            <button class="pill" data-filter="failed">Failed</button>
+                        </div>
+                    </div>
+                    <div class="card-body scroll" style="padding:0">
+                        <table class="validation-table" id="validation-table">
+                            <thead>
+                                <tr>
+                                    <th>Rule</th>
+                                    <th>Type</th>
+                                    <th>Table</th>
+                                    <th>Severity</th>
+                                    <th>Status</th>
+                                    <th>Violations</th>
+                                </tr>
+                            </thead>
+                            <tbody id="validation-rules"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </section>
-    </main>
+        </div>
 
+        <!-- ===== TAB 3: Chaos Lab ===== -->
+        <div class="tab-panel" id="panel-chaos-lab">
+            <div class="chaos-grid">
+                <!-- Hero banner -->
+                <div class="chaos-hero" data-animate>
+                    <div class="chaos-hero-text">
+                        <h2>Chaos Engineering Lab</h2>
+                        <p>Trigger controlled failures to test monitoring and auto-remediation</p>
+                    </div>
+                    <button class="btn-chaos-hero" onclick="triggerRandomChaos()">Trigger Random Scenario</button>
+                </div>
+
+                <!-- 3-column: Infra | Sport-Suite | Postmortems -->
+                <div class="chaos-columns">
+                    <div class="card" data-animate style="animation-delay:40ms">
+                        <div class="card-header"><h2>Infrastructure</h2></div>
+                        <div class="card-body scroll" style="padding:0" id="chaos-infra">
+                            <p class="empty-state">Loading...</p>
+                        </div>
+                    </div>
+                    <div class="card" data-animate style="animation-delay:80ms">
+                        <div class="card-header"><h2>Sport-Suite</h2></div>
+                        <div class="card-body scroll" style="padding:0" id="chaos-sportsuite">
+                            <p class="empty-state">Loading...</p>
+                        </div>
+                    </div>
+                    <div class="card card--accent-purple" data-animate style="animation-delay:120ms">
+                        <div class="card-header"><h2>Postmortem Feed</h2></div>
+                        <div class="card-body scroll" style="padding:0" id="chaos-postmortems">
+                            <p class="empty-state">No postmortems yet</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB 4: Pipeline ===== -->
+        <div class="tab-panel" id="panel-pipeline">
+            <div class="analytics-grid">
+                <!-- Row 1: Key pipeline stat cards -->
+                <div class="card card--accent-green metric-card kaggle-stat-card" id="card-pl-winrate" data-animate style="animation-delay:0ms">
+                    <div class="metric-label">Win Rate 7D</div>
+                    <div class="metric-value" id="metric-pl-winrate">--</div>
+                    <div class="metric-unit">%</div>
+                    <div class="inline-bar">
+                        <span>Target 55%</span>
+                        <div class="inline-bar-track">
+                            <div class="inline-bar-fill" id="bar-pl-winrate" style="width:0%;background:var(--green)"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card card--accent-cyan metric-card kaggle-stat-card" id="card-pl-predictions" data-animate style="animation-delay:40ms">
+                    <div class="metric-label">Predictions</div>
+                    <div class="metric-value" id="metric-pl-predictions">--</div>
+                    <div class="metric-unit">today</div>
+                    <div class="inline-bar">
+                        <span>Models</span>
+                        <div class="inline-bar-track">
+                            <div class="inline-bar-fill" id="bar-pl-models" style="width:0%;background:var(--cyan)"></div>
+                        </div>
+                        <span id="metric-pl-models">--</span>
+                    </div>
+                </div>
+                <div class="card card--accent-blue metric-card kaggle-stat-card" id="card-pl-snapshots" data-animate style="animation-delay:80ms">
+                    <div class="metric-label">Line Snapshots</div>
+                    <div class="metric-value" id="metric-pl-snapshots">--</div>
+                    <div class="metric-unit">today / 15K</div>
+                    <div class="inline-bar">
+                        <span>Volume</span>
+                        <div class="inline-bar-track">
+                            <div class="inline-bar-fill" id="bar-pl-volume" style="width:0%;background:var(--blue)"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card card--accent-purple metric-card kaggle-stat-card" id="card-pl-apis" data-animate style="animation-delay:120ms">
+                    <div class="metric-label">API Health</div>
+                    <div class="metric-value" id="metric-pl-api-status">--</div>
+                    <div class="metric-unit">status</div>
+                    <div class="inline-bar">
+                        <span>Latency</span>
+                        <div class="inline-bar-track">
+                            <div class="inline-bar-fill" id="bar-pl-latency" style="width:0%;background:var(--purple)"></div>
+                        </div>
+                        <span id="metric-pl-latency">--</span>ms
+                    </div>
+                </div>
+
+                <!-- Row 2: Conviction Distribution + Pipeline Runs -->
+                <div class="card analytics-full" data-animate style="animation-delay:160ms">
+                    <div class="card-header"><h2>Conviction Distribution</h2></div>
+                    <div class="card-body" id="conviction-bars">
+                        <div class="bar-chart-row">
+                            <span class="bar-label">LOCKED</span>
+                            <div class="bar-track"><div class="bar-fill" id="conv-locked" style="width:0%;background:var(--conviction-locked)"></div></div>
+                            <span class="bar-value" id="conv-locked-val">0</span>
+                        </div>
+                        <div class="bar-chart-row">
+                            <span class="bar-label">STRONG</span>
+                            <div class="bar-track"><div class="bar-fill" id="conv-strong" style="width:0%;background:var(--conviction-strong)"></div></div>
+                            <span class="bar-value" id="conv-strong-val">0</span>
+                        </div>
+                        <div class="bar-chart-row">
+                            <span class="bar-label">WATCH</span>
+                            <div class="bar-track"><div class="bar-fill" id="conv-watch" style="width:0%;background:var(--conviction-watch)"></div></div>
+                            <span class="bar-value" id="conv-watch-val">0</span>
+                        </div>
+                        <div class="bar-chart-row">
+                            <span class="bar-label">SKIP</span>
+                            <div class="bar-track"><div class="bar-fill" id="conv-skip" style="width:0%;background:var(--conviction-skip)"></div></div>
+                            <span class="bar-value" id="conv-skip-val">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card analytics-full-right" data-animate style="animation-delay:200ms">
+                    <div class="card-header"><h2>Pipeline Runs</h2></div>
+                    <div class="card-body scroll" id="pipeline-runs-list">
+                        <p class="empty-state">No pipeline runs</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /tab-content -->
+
+    <!-- ===== Incident Detail Modal ===== -->
+    <div class="modal-overlay" id="incident-modal" onclick="closeModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="modal-title">Incident Detail</h3>
+                <button class="btn btn-sm" onclick="document.getElementById('incident-modal').classList.remove('active')">Close</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+            <div class="modal-actions" id="modal-actions"></div>
+        </div>
+    </div>
+
+    <!-- ===== Footer ===== -->
     <footer>
-        <span>SQL Server Sentinel v1.0.0</span>
+        <span>Sport-Suite Sentinel v1.0.0</span>
         <a href="/docs" target="_blank">API Docs</a>
     </footer>
 

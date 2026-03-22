@@ -32,10 +32,13 @@ def get_dashboard(state: AppState = Depends(get_state)):
     # Postmortems
     postmortems = state.incidents.list_postmortems(limit=5)
 
-    # Healthcare metrics
-    healthcare_metrics = {}
-    if hasattr(state, "healthcare"):
-        healthcare_metrics = state.healthcare.get_latest_metrics() or {}
+    # Pipeline metrics — live query so chaos effects show immediately
+    pipeline_metrics = {}
+    if hasattr(state, "pipeline"):
+        try:
+            pipeline_metrics = state.pipeline.collect_metrics()
+        except Exception:
+            pipeline_metrics = state.pipeline.get_latest_metrics() or {}
 
     return {
         "health": latest_health,
@@ -46,5 +49,5 @@ def get_dashboard(state: AppState = Depends(get_state)):
         "validation": scorecard,
         "chaos_scenarios": scenarios,
         "postmortems": postmortems,
-        "healthcare": healthcare_metrics,
+        "pipeline": pipeline_metrics,
     }

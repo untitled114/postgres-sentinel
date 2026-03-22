@@ -6,12 +6,12 @@ build-backend = "setuptools.build_meta"
 include = ["sentinel*"]
 
 [project]
-name = "sql-server-sentinel"
-version = "1.0.0"
-description = "SQL Server production monitoring, chaos engineering, and incident response system"
+name = "sentinel"
+version = "2.0.0"
+description = "Production monitoring, chaos engineering, and incident response system"
 requires-python = ">=3.10"
 dependencies = [
-    "pyodbc>=5.1",
+    "psycopg2-binary>=2.9",
     "fastapi>=0.109",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.5",

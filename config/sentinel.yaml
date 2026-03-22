@@ -1,11 +1,9 @@
 database:
-  host: "${DB_HOST:sqlserver}"
-  port: 1433
-  name: "${DB_NAME:SentinelDB}"
-  user: "${DB_USER:sa}"
-  password: "${SA_PASSWORD}"
-  driver: "ODBC Driver 18 for SQL Server"
-  trust_cert: true
+  host: "${DB_HOST:localhost}"
+  port: ${DB_PORT:5500}
+  name: "${DB_NAME:sportsuite}"
+  user: "${DB_USER:mlb_user}"
+  password: "${DB_PASSWORD:mlb_secure_2025}"
   connect_timeout: 10
   query_timeout: 30
 
@@ -14,19 +12,25 @@ thresholds:
   cpu_percent_critical: 90.0
   memory_percent_warning: 75.0
   memory_percent_critical: 90.0
-  blocking_chain_warning: 2
-  blocking_chain_critical: 5
-  long_query_seconds_warning: 30
-  long_query_seconds_critical: 120
   connection_count_warning: 80
   connection_count_critical: 150
-  tempdb_usage_mb_warning: 500.0
-  tempdb_usage_mb_critical: 1000.0
-  # Healthcare thresholds
-  claim_rejection_rate_warning: 5.0
-  claim_rejection_rate_critical: 15.0
-  generic_dispensing_rate_warning: 80.0
-  pdc_adherence_warning: 0.80
+  long_query_seconds_warning: 30
+  long_query_seconds_critical: 120
+  lock_wait_warning: 5
+  lock_wait_critical: 15
+  dead_tuple_ratio_warning: 10.0
+  dead_tuple_ratio_critical: 25.0
+  win_rate_7d_warning: 55.0
+  win_rate_7d_critical: 50.0
+  line_snapshot_volume_warning: 10000
+  line_snapshot_volume_critical: 5000
+  prediction_staleness_hours: 4.0
+  feature_null_rate_warning: 5.0
+  feature_null_rate_critical: 15.0
+  conviction_locked_pct_warning: 25.0
+  api_response_ms_warning: 5000.0
+  api_response_ms_critical: 15000.0
+  book_coverage_warning: 5
 
 monitor:
   poll_interval_seconds: 10

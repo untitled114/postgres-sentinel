@@ -1,4 +1,4 @@
-"""Data catalog engine — schema scanning, PHI/PII classification, lineage."""
+"""Data catalog engine — schema scanning, sensitive data classification, lineage."""
 
 from __future__ import annotations
 
@@ -8,15 +8,16 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-# PHI/PII patterns for auto-classification
-PHI_PATTERNS: dict[str, re.Pattern] = {
-    "name": re.compile(r"(first_name|last_name|full_name|patient_name)", re.IGNORECASE),
-    "dob": re.compile(r"(date_of_birth|dob|birth_date|birthdate)", re.IGNORECASE),
-    "ssn": re.compile(r"(ssn|social_security|ssn_last)", re.IGNORECASE),
-    "phone": re.compile(r"(phone|fax|mobile|telephone)", re.IGNORECASE),
+# Sensitive data patterns for auto-classification
+SENSITIVE_PATTERNS: dict[str, re.Pattern] = {
+    "api_key": re.compile(r"(api_key|apikey|api_secret|secret_key)", re.IGNORECASE),
+    "token": re.compile(r"(token|bearer|auth_token|access_token|refresh_token)", re.IGNORECASE),
+    "credential": re.compile(r"(password|passwd|credential|secret)", re.IGNORECASE),
+    "sportsbook_key": re.compile(
+        r"(book_key|sportsbook_auth|betting_token|proxy_auth)", re.IGNORECASE
+    ),
     "email": re.compile(r"(email|e_mail)", re.IGNORECASE),
-    "address": re.compile(r"(address|street|city|zip_code|state_code)", re.IGNORECASE),
-    "member_id": re.compile(r"(member_id|patient_id|subscriber_id)", re.IGNORECASE),
+    "phone": re.compile(r"(phone|mobile|telephone)", re.IGNORECASE),
 }
 
 PII_PATTERNS: dict[str, re.Pattern] = {
@@ -25,60 +26,59 @@ PII_PATTERNS: dict[str, re.Pattern] = {
     "identifier": re.compile(r"(ssn|driver_license|passport)", re.IGNORECASE),
 }
 
-# Masking rules by PHI category
+# Masking rules by sensitive category
 MASKING_RULES: dict[str, str] = {
-    "name": "partial_mask",
-    "dob": "full_mask",
-    "ssn": "full_mask",
-    "phone": "partial_mask",
+    "api_key": "full_mask",
+    "token": "full_mask",
+    "credential": "full_mask",
+    "sportsbook_key": "full_mask",
     "email": "partial_mask",
-    "address": "partial_mask",
-    "member_id": "hash",
+    "phone": "partial_mask",
 }
 
 
 class DataCatalogEngine:
-    """Manages the data catalog, PHI classification, and lineage tracking."""
+    """Manages the data catalog, sensitive data classification, and lineage tracking."""
 
     def __init__(self, db):
         self.db = db
 
-    def scan_schema(self, schema_name: str = "dbo") -> dict:
-        """Scan database schema and auto-classify PHI/PII columns."""
+    def scan_schema(self, schema_name: str = "public") -> dict:
+        """Scan database schema and auto-classify sensitive columns."""
         sql = """
             SELECT
-                TABLE_SCHEMA AS schema_name,
-                TABLE_NAME AS table_name,
-                COLUMN_NAME AS column_name,
-                DATA_TYPE AS data_type
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = ?
-            ORDER BY TABLE_NAME, ORDINAL_POSITION
+                table_schema AS schema_name,
+                table_name,
+                column_name,
+                data_type
+            FROM information_schema.columns
+            WHERE table_schema = %s
+            ORDER BY table_name, ordinal_position
         """
         rows = self.db.execute_query(sql, (schema_name,))
 
         classified = 0
         for row in rows:
             column_name = row["column_name"]
-            phi_category = self._classify_phi(column_name)
+            sensitive_category = self._classify_sensitive(column_name)
             is_pii = self._classify_pii(column_name)
-            masking_rule = MASKING_RULES.get(phi_category) if phi_category else None
+            masking_rule = MASKING_RULES.get(sensitive_category) if sensitive_category else None
 
             self._upsert_catalog_entry(
                 schema_name=row["schema_name"],
                 table_name=row["table_name"],
                 column_name=column_name,
                 data_type=row["data_type"],
-                is_phi=phi_category is not None,
+                is_phi=sensitive_category is not None,
                 is_pii=is_pii,
-                phi_category=phi_category,
+                phi_category=sensitive_category,
                 masking_rule=masking_rule,
             )
-            if phi_category or is_pii:
+            if sensitive_category or is_pii:
                 classified += 1
 
         logger.info(
-            "Schema scan complete: %d columns scanned, %d PHI/PII classified",
+            "Schema scan complete: %d columns scanned, %d sensitive classified",
             len(rows),
             classified,
         )
@@ -94,10 +94,10 @@ class DataCatalogEngine:
         params: list = []
 
         if table_name:
-            conditions.append("table_name = ?")
+            conditions.append("table_name = %s")
             params.append(table_name)
         if phi_only:
-            conditions.append("is_phi = 1")
+            conditions.append("is_phi = true")
 
         sql = (
             "SELECT id, schema_name, table_name, column_name, data_type, "
@@ -112,19 +112,19 @@ class DataCatalogEngine:
         """Retrieve ETL lineage records."""
         if pipeline_name:
             sql = (
-                "SELECT TOP (?) id, pipeline_name, execution_id, source_table, "
+                "SELECT id, pipeline_name, execution_id, source_table, "
                 "target_table, started_at, completed_at, status, rows_read, "
                 "rows_written, rows_rejected, error_message "
-                "FROM data_lineage WHERE pipeline_name = ? "
-                "ORDER BY started_at DESC"
+                "FROM data_lineage WHERE pipeline_name = %s "
+                "ORDER BY started_at DESC LIMIT %s"
             )
-            return self.db.execute_query(sql, (limit, pipeline_name))
+            return self.db.execute_query(sql, (pipeline_name, limit))
 
         sql = (
-            "SELECT TOP (?) id, pipeline_name, execution_id, source_table, "
+            "SELECT id, pipeline_name, execution_id, source_table, "
             "target_table, started_at, completed_at, status, rows_read, "
             "rows_written, rows_rejected, error_message "
-            "FROM data_lineage ORDER BY started_at DESC"
+            "FROM data_lineage ORDER BY started_at DESC LIMIT %s"
         )
         return self.db.execute_query(sql, (limit,))
 
@@ -144,8 +144,8 @@ class DataCatalogEngine:
             INSERT INTO data_lineage
                 (pipeline_name, source_table, target_table, status,
                  completed_at, rows_read, rows_written, rows_rejected, error_message)
-            OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, SYSUTCDATETIME(), ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
+            RETURNING id
         """
         result = self.db.execute_query(
             sql,
@@ -162,9 +162,9 @@ class DataCatalogEngine:
         )
         return result[0]["id"] if result else 0
 
-    def _classify_phi(self, column_name: str) -> str | None:
-        """Check if a column name matches PHI patterns."""
-        for category, pattern in PHI_PATTERNS.items():
+    def _classify_sensitive(self, column_name: str) -> str | None:
+        """Check if a column name matches sensitive data patterns."""
+        for category, pattern in SENSITIVE_PATTERNS.items():
             if pattern.search(column_name):
                 return category
         return None
@@ -176,20 +176,23 @@ class DataCatalogEngine:
                 return True
         return False
 
-    def mask_patients_for_export(self) -> list[dict]:
-        """Return patient data with PHI fields masked for safe export."""
-        rows = self.db.execute_proc("sp_mask_phi_for_export")
+    def mask_credentials_for_export(self) -> list[dict]:
+        """Return API config data with credential fields masked for safe export."""
+        rows = self.db.execute_query(
+            "SELECT api_name, status, checked_at FROM api_health_log "
+            "ORDER BY checked_at DESC LIMIT 50"
+        )
         count = len(rows) if rows else 0
-        self.log_phi_access(
+        self.log_access(
             user="system",
             action="MASKED_EXPORT",
-            table="patients",
+            table="api_health_log",
             count=count,
-            justification="PHI masked export via governance API",
+            justification="Credential-masked export via governance API",
         )
         return rows or []
 
-    def log_phi_access(
+    def log_access(
         self,
         user: str,
         action: str,
@@ -197,55 +200,40 @@ class DataCatalogEngine:
         count: int,
         justification: str,
     ) -> None:
-        """Record a PHI access event in the audit log."""
+        """Record a sensitive data access event in the audit log."""
         try:
             self.db.execute_nonquery(
                 "INSERT INTO phi_access_log "
                 "(user_name, action, table_name, record_count, "
                 "justification, access_time) "
-                "VALUES (?, ?, ?, ?, ?, SYSUTCDATETIME())",
+                "VALUES (%s, %s, %s, %s, %s, NOW())",
                 (user, action, table, count, justification),
             )
         except Exception as e:
-            logger.warning("Failed to log PHI access: %s", e)
+            logger.warning("Failed to log access: %s", e)
 
     def _upsert_catalog_entry(self, **kwargs) -> None:
         """Insert or update a catalog entry."""
         sql = """
-            MERGE INTO data_catalog AS tgt
-            USING (SELECT ? AS schema_name, ? AS table_name, ? AS column_name) AS src
-            ON tgt.schema_name = src.schema_name
-               AND tgt.table_name = src.table_name
-               AND ISNULL(tgt.column_name, '') = ISNULL(src.column_name, '')
-            WHEN MATCHED THEN UPDATE SET
-                data_type = ?,
-                is_phi = ?,
-                is_pii = ?,
-                phi_category = ?,
-                masking_rule = ?,
-                last_scanned_at = SYSUTCDATETIME(),
-                updated_at = SYSUTCDATETIME()
-            WHEN NOT MATCHED THEN INSERT
+            INSERT INTO data_catalog
                 (schema_name, table_name, column_name, data_type,
                  is_phi, is_pii, phi_category, masking_rule,
                  classification, last_scanned_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?,
-                    CASE WHEN ? = 1 THEN 'restricted' ELSE 'internal' END,
-                    SYSUTCDATETIME());
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                    CASE WHEN %s THEN 'restricted' ELSE 'internal' END,
+                    NOW())
+            ON CONFLICT (schema_name, table_name, column_name) DO UPDATE SET
+                data_type = EXCLUDED.data_type,
+                is_phi = EXCLUDED.is_phi,
+                is_pii = EXCLUDED.is_pii,
+                phi_category = EXCLUDED.phi_category,
+                masking_rule = EXCLUDED.masking_rule,
+                last_scanned_at = NOW(),
+                updated_at = NOW()
         """
         self.db.execute_nonquery(
             sql,
             (
-                kwargs["schema_name"],
-                kwargs["table_name"],
-                kwargs["column_name"],
-                # UPDATE SET params
-                kwargs["data_type"],
-                kwargs["is_phi"],
-                kwargs["is_pii"],
-                kwargs["phi_category"],
-                kwargs["masking_rule"],
-                # INSERT VALUES params
                 kwargs["schema_name"],
                 kwargs["table_name"],
                 kwargs["column_name"],

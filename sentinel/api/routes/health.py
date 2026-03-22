@@ -30,7 +30,7 @@ def get_health(state: AppState = Depends(get_state)):
 
 @router.get("/sql", response_model=SqlHealthResponse)
 def get_sql_health(state: AppState = Depends(get_state)):
-    """SQL Server connectivity and version info."""
+    """PostgreSQL connectivity and version info."""
     return state.health.get_sql_health()
 
 

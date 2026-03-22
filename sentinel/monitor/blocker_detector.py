@@ -1,4 +1,4 @@
-"""Blocking chain detection via DMV recursive CTE."""
+"""Blocking chain detection via pg_locks and pg_stat_activity."""
 
 from __future__ import annotations
 
@@ -7,13 +7,12 @@ from typing import Any
 
 from sentinel.core.exceptions import DatabaseQueryError
 from sentinel.db.connection import ConnectionManager
-from sentinel.db.queries import load_dmv
 
 logger = logging.getLogger(__name__)
 
 
 class BlockerDetector:
-    """Detects blocking chains in SQL Server using sys.dm_exec_requests."""
+    """Detects blocking chains in PostgreSQL using pg_locks and pg_stat_activity."""
 
     def __init__(self, db: ConnectionManager):
         self.db = db
@@ -21,11 +20,74 @@ class BlockerDetector:
     def detect(self) -> list[dict[str, Any]]:
         """Run blocking chain detection and return results."""
         try:
-            sql = load_dmv("blocking_chains")
+            sql = """
+                WITH RECURSIVE blocking_tree AS (
+                    SELECT
+                        blocked.pid AS blocked_pid,
+                        blocked.usename AS blocked_user,
+                        blocked.query AS blocked_query,
+                        blocked.wait_event_type AS blocked_wait_type,
+                        blocker.pid AS blocker_pid,
+                        blocker.usename AS blocker_user,
+                        blocker.query AS blocker_query,
+                        blocker.pid AS root_blocker_id,
+                        0 AS chain_depth
+                    FROM pg_stat_activity blocked
+                    JOIN LATERAL unnest(pg_blocking_pids(blocked.pid)) AS bp(pid) ON true
+                    JOIN pg_stat_activity blocker ON blocker.pid = bp.pid
+                    WHERE blocked.pid != blocked.backend_xid::text::int
+                       OR blocked.wait_event_type IS NOT NULL
+
+                    UNION ALL
+
+                    SELECT
+                        bt.blocked_pid,
+                        bt.blocked_user,
+                        bt.blocked_query,
+                        bt.blocked_wait_type,
+                        parent_blocker.pid AS blocker_pid,
+                        parent_blocker.usename AS blocker_user,
+                        parent_blocker.query AS blocker_query,
+                        parent_blocker.pid AS root_blocker_id,
+                        bt.chain_depth + 1
+                    FROM blocking_tree bt
+                    JOIN LATERAL unnest(pg_blocking_pids(bt.blocker_pid)) AS bp(pid) ON true
+                    JOIN pg_stat_activity parent_blocker ON parent_blocker.pid = bp.pid
+                    WHERE bt.chain_depth < 10
+                )
+                SELECT DISTINCT
+                    blocked_pid,
+                    blocked_user,
+                    LEFT(blocked_query, 200) AS blocked_query,
+                    blocker_pid,
+                    blocker_user,
+                    LEFT(blocker_query, 200) AS blocker_query,
+                    root_blocker_id,
+                    chain_depth
+                FROM blocking_tree
+                ORDER BY chain_depth, blocker_pid
+            """
             return self.db.execute_query(sql)
         except DatabaseQueryError as e:
             logger.error("Blocking chain detection failed: %s", e)
-            return []
+            # Fallback: simpler query without recursive CTE
+            try:
+                return self.db.execute_query(
+                    "SELECT "
+                    "  blocked.pid AS blocked_pid, "
+                    "  blocked.usename AS blocked_user, "
+                    "  LEFT(blocked.query, 200) AS blocked_query, "
+                    "  blocker.pid AS blocker_pid, "
+                    "  blocker.usename AS blocker_user, "
+                    "  LEFT(blocker.query, 200) AS blocker_query, "
+                    "  blocker.pid AS root_blocker_id, "
+                    "  0 AS chain_depth "
+                    "FROM pg_stat_activity blocked "
+                    "JOIN LATERAL unnest(pg_blocking_pids(blocked.pid)) AS bp(pid) ON true "
+                    "JOIN pg_stat_activity blocker ON blocker.pid = bp.pid"
+                )
+            except DatabaseQueryError:
+                return []
 
     def get_root_blockers(self) -> list[dict[str, Any]]:
         """Get only the root blockers (chain_depth = 0)."""

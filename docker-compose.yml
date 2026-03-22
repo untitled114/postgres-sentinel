@@ -1,56 +1,37 @@
 services:
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+  postgres:
+    image: postgres:16
     restart: unless-stopped
     environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${SA_PASSWORD:-Sentinel#Pass2026}"
-      MSSQL_PID: "Developer"
+      POSTGRES_DB: "${DB_NAME:-sentinel}"
+      POSTGRES_USER: "${DB_USER:-sentinel}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-sentinel_pass}"
     ports:
-      - "1433:1433"
+      - "${DB_PORT:-5432}:5432"
     volumes:
-      - sqldata:/var/opt/mssql
+      - pgdata:/var/lib/postgresql/data
       - ./sql/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -Q "SELECT 1" -C -b
-      interval: 10s
+      test: pg_isready -U ${DB_USER:-sentinel} -d ${DB_NAME:-sentinel}
+      interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 30s
-
-  init-db:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    depends_on:
-      sqlserver:
-        condition: service_healthy
-    volumes:
-      - ./sql/init:/sql
-    environment:
-      SA_PASSWORD: "${SA_PASSWORD:-Sentinel#Pass2026}"
-    entrypoint: /bin/bash
-    command: >
-      -c "
-      for f in /sql/*.sql; do
-        echo \"Running $$f...\";
-        /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P \"$$SA_PASSWORD\" -d master -i \"$$f\" -C -b;
-      done;
-      echo 'Database initialization complete.';
-      "
+      start_period: 10s
 
   sentinel:
     build: .
     restart: unless-stopped
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     ports:
       - "${SENTINEL_PORT:-8000}:8000"
     environment:
-      SA_PASSWORD: "${SA_PASSWORD:-Sentinel#Pass2026}"
-      DB_HOST: "sqlserver"
-      DB_PORT: "1433"
-      DB_NAME: "SentinelDB"
-      DB_USER: "sa"
+      DB_HOST: "postgres"
+      DB_PORT: "5432"
+      DB_NAME: "${DB_NAME:-sentinel}"
+      DB_USER: "${DB_USER:-sentinel}"
+      DB_PASSWORD: "${DB_PASSWORD:-sentinel_pass}"
       SENTINEL_LOG_LEVEL: "${SENTINEL_LOG_LEVEL:-INFO}"
       SENTINEL_LOG_FORMAT: "${SENTINEL_LOG_FORMAT:-json}"
     volumes:
@@ -64,4 +45,4 @@ services:
       start_period: 60s
 
 volumes:
-  sqldata:
+  pgdata:

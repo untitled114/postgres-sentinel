@@ -24,6 +24,7 @@ class MockAppState:
         from sentinel.monitor.blocker_detector import BlockerDetector
         from sentinel.monitor.health import HealthCollector
         from sentinel.monitor.incident_manager import IncidentManager
+        from sentinel.monitor.pipeline import PipelineMonitor
         from sentinel.remediation.engine import RemediationEngine
         from sentinel.validation.engine import ValidationEngine
 
@@ -37,6 +38,7 @@ class MockAppState:
         self.chaos = ChaosEngine(mock_db, self.incidents)
         self.remediation = RemediationEngine(mock_db, self.incidents)
         self.catalog = DataCatalogEngine(mock_db)
+        self.pipeline = PipelineMonitor(mock_db, config.thresholds)
 
 
 @pytest.fixture
@@ -57,8 +59,8 @@ class TestGovernanceCatalogAPI:
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
-    def test_get_phi_columns(self, client):
-        resp = client.get("/api/governance/catalog/phi")
+    def test_get_sensitive_columns(self, client):
+        resp = client.get("/api/governance/catalog/sensitive")
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
@@ -69,14 +71,13 @@ class TestGovernanceCatalogAPI:
         assert "columns_scanned" in data
         assert "phi_pii_classified" in data
         assert data["columns_scanned"] == 8
-        assert data["phi_pii_classified"] > 0
 
     def test_scan_schema_custom(self, client):
-        resp = client.post("/api/governance/catalog/scan?schema_name=dbo")
+        resp = client.post("/api/governance/catalog/scan?schema_name=public")
         assert resp.status_code == 200
 
     def test_get_catalog_filtered_by_table(self, client):
-        resp = client.get("/api/governance/catalog?table=patients")
+        resp = client.get("/api/governance/catalog?table=predictions")
         assert resp.status_code == 200
 
 

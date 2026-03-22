@@ -10,7 +10,7 @@ class DatabaseConnectionError(SentinelError):
 
 
 class DatabaseQueryError(SentinelError):
-    """A SQL query or stored procedure failed."""
+    """A SQL query or function call failed."""
 
 
 class DatabaseTimeoutError(DatabaseQueryError):

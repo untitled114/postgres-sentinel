@@ -1,4 +1,4 @@
-"""Python-based job scheduler — replaces SQL Agent for Linux Docker."""
+"""Python-based job scheduler — cron-driven SQL execution with logging."""
 
 from __future__ import annotations
 
@@ -75,11 +75,12 @@ class JobRunner:
         """Get job run history."""
         if job_name:
             return self.db.execute_query(
-                "SELECT TOP (?) * FROM job_runs WHERE job_name = ? ORDER BY started_at DESC",
-                (limit, job_name),
+                "SELECT * FROM job_runs WHERE job_name = %s "
+                "ORDER BY started_at DESC LIMIT %s",
+                (job_name, limit),
             )
         return self.db.execute_query(
-            "SELECT TOP (?) * FROM job_runs ORDER BY started_at DESC", (limit,)
+            "SELECT * FROM job_runs ORDER BY started_at DESC LIMIT %s", (limit,)
         )
 
     def run_job(self, job_name: str) -> dict[str, Any]:
@@ -133,12 +134,9 @@ class JobRunner:
     def _log_start(self, job_name: str) -> int | None:
         """Log a job run start and return the run ID."""
         try:
-            self.db.execute_nonquery(
-                "INSERT INTO job_runs (job_name, status) VALUES (?, 'running')",
-                (job_name,),
-            )
             rows = self.db.execute_query(
-                "SELECT TOP 1 id FROM job_runs WHERE job_name = ? ORDER BY id DESC", (job_name,)
+                "INSERT INTO job_runs (job_name, status) VALUES (%s, 'running') RETURNING id",
+                (job_name,),
             )
             return rows[0]["id"] if rows else None
         except DatabaseQueryError as e:
@@ -158,8 +156,8 @@ class JobRunner:
             return
         try:
             self.db.execute_nonquery(
-                "UPDATE job_runs SET completed_at = SYSUTCDATETIME(), status = ?, "
-                "duration_ms = ?, rows_affected = ?, error_message = ? WHERE id = ?",
+                "UPDATE job_runs SET completed_at = NOW(), status = %s, "
+                "duration_ms = %s, rows_affected = %s, error_message = %s WHERE id = %s",
                 (status, duration_ms, rows_affected, error, run_id),
             )
         except DatabaseQueryError as e:

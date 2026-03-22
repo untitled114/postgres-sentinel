@@ -1,54 +1,62 @@
 scenarios:
+  # --- Infrastructure ---
+
   - name: "Long Running Query"
-    description: "Runs a 45-second blocking query"
+    description: "Simulates stuck query via pg_sleep(45)"
     severity: "medium"
     cooldown_seconds: 60
-    enabled: true
-
-  - name: "Deadlock"
-    description: "Creates conditions for deadlock detection"
-    severity: "high"
-    cooldown_seconds: 30
-    enabled: true
-
-  - name: "Data Corruption"
-    description: "Injects invalid data to trigger validation failures"
-    severity: "high"
-    cooldown_seconds: 30
-    enabled: true
-
-  - name: "Orphaned Records"
-    description: "Creates orphaned foreign key references"
-    severity: "medium"
-    cooldown_seconds: 30
-    enabled: true
-
-  - name: "Job Failure"
-    description: "Simulates a scheduled job failure"
-    severity: "low"
-    cooldown_seconds: 15
     enabled: true
 
   - name: "Connection Flood"
-    description: "Opens 20 concurrent connections"
+    description: "Opens 20 concurrent connections to stress the pool"
     severity: "high"
     cooldown_seconds: 60
     enabled: true
 
-  - name: "Claim Volume Spike"
-    description: "Bulk inserts ~200 pharmacy claims with mixed statuses"
+  # --- Pipeline Failures ---
+
+  - name: "DAG Overlap"
+    description: "Creates 2 concurrent running pipeline_runs for same date"
+    severity: "medium"
+    cooldown_seconds: 30
+    enabled: true
+
+  - name: "Extractor Default Injection"
+    description: "Writes a pipeline_run with 0 feature count to trigger regression alert"
+    severity: "high"
+    cooldown_seconds: 30
+    enabled: true
+
+  - name: "Line Ingestion Drop"
+    description: "Deletes today's line snapshots to simulate ingestion failure"
     severity: "high"
     cooldown_seconds: 60
     enabled: true
 
-  - name: "PHI Exposure"
-    description: "Inserts 100 suspicious PHI access records from a single user"
+  # --- Model Failures ---
+
+  - name: "Model File Missing"
+    description: "Updates model_registry pkl_path to nonexistent file"
     severity: "high"
     cooldown_seconds: 60
     enabled: true
 
-  - name: "Formulary Change"
-    description: "Moves generics from tier 1 to tier 3 with prior auth required"
+  - name: "Conviction Collapse"
+    description: "Downgrades all LOCKED picks to SKIP for today"
+    severity: "high"
+    cooldown_seconds: 60
+    enabled: true
+
+  - name: "Win Rate Crash"
+    description: "Inserts 7 days of 45% win rate predictions"
+    severity: "high"
+    cooldown_seconds: 60
+    enabled: true
+
+  # --- Data Quality ---
+
+  - name: "Prediction Staleness"
+    description: "Deletes today's predictions to trigger freshness alert"
     severity: "medium"
     cooldown_seconds: 30
     enabled: true

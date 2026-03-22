@@ -72,12 +72,14 @@ class ChaosEngine:
         # Set cooldown
         self._cooldowns[scenario_name] = now + 30
 
-        # Create incident
+        # Create incident — map scenario severity to DB-valid values
+        severity_map = {"high": "critical", "medium": "warning", "low": "info"}
+        db_severity = severity_map.get(scenario.severity, scenario.severity)
         if result.get("triggered"):
             self.incident_manager.create(
                 incident_type=f"chaos:{scenario_name.lower().replace(' ', '_')}",
                 title=f"Chaos: {scenario_name}",
-                severity=scenario.severity,
+                severity=db_severity,
                 description=result.get("detail", ""),
                 dedup_key=f"chaos_{scenario_name}",
                 metadata={"chaos_scenario": scenario_name, "result": result},

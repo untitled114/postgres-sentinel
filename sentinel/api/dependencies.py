@@ -10,8 +10,8 @@ from sentinel.governance.catalog import DataCatalogEngine
 from sentinel.jobs.runner import JobRunner
 from sentinel.monitor.blocker_detector import BlockerDetector
 from sentinel.monitor.health import HealthCollector
-from sentinel.monitor.healthcare import HealthcareMonitor
 from sentinel.monitor.incident_manager import IncidentManager
+from sentinel.monitor.pipeline import PipelineMonitor
 from sentinel.remediation.engine import RemediationEngine
 from sentinel.validation.engine import ValidationEngine
 
@@ -30,7 +30,7 @@ class AppState:
         self.chaos: ChaosEngine = ChaosEngine(self.db, self.incidents)
         self.remediation: RemediationEngine = RemediationEngine(self.db, self.incidents)
         self.catalog: DataCatalogEngine = DataCatalogEngine(self.db)
-        self.healthcare: HealthcareMonitor = HealthcareMonitor(self.db, self.config.thresholds)
+        self.pipeline: PipelineMonitor = PipelineMonitor(self.db, self.config.thresholds)
 
 
 # Singleton

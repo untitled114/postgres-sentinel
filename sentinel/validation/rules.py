@@ -14,10 +14,10 @@ _IDENTIFIER_RE = re.compile(r"^[\w]+$")
 
 
 def _safe_ident(name: str) -> str:
-    """Validate and quote a SQL Server identifier. Raises ValueError if invalid."""
+    """Validate and quote a PostgreSQL identifier. Raises ValueError if invalid."""
     if not _IDENTIFIER_RE.match(name):
         raise ValueError(f"Invalid SQL identifier: {name!r}")
-    return f"[{name}]"
+    return f'"{name}"'
 
 
 class ValidationRule:
@@ -56,7 +56,9 @@ class NullCheckRule(ValidationRule):
         count = rows[0]["cnt"] if rows else 0
         samples = []
         if count > 0:
-            sample_rows = db.execute_query(f"SELECT TOP 5 * FROM {tbl} WHERE {col} IS NULL")
+            sample_rows = db.execute_query(
+                f"SELECT * FROM {tbl} WHERE {col} IS NULL LIMIT 5"
+            )
             samples = [str(r) for r in sample_rows]
         return {"passed": count == 0, "violation_count": count, "sample_values": samples}
 
@@ -74,21 +76,23 @@ class RangeCheckRule(ValidationRule):
         conditions = []
         params: list = []
         if min_val is not None:
-            conditions.append(f"{col} < ?")
+            conditions.append(f"{col} < %s")
             params.append(float(min_val))
         if max_val is not None:
-            conditions.append(f"{col} > ?")
+            conditions.append(f"{col} > %s")
             params.append(float(max_val))
         if not conditions:
             return {"passed": True, "violation_count": 0, "sample_values": []}
 
         where = " OR ".join(conditions)
-        rows = db.execute_query(f"SELECT COUNT(*) AS cnt FROM {tbl} WHERE {where}", tuple(params))
+        rows = db.execute_query(
+            f"SELECT COUNT(*) AS cnt FROM {tbl} WHERE {where}", tuple(params)
+        )
         count = rows[0]["cnt"] if rows else 0
         samples = []
         if count > 0:
             sample_rows = db.execute_query(
-                f"SELECT TOP 5 {col} FROM {tbl} WHERE {where}", tuple(params)
+                f"SELECT {col} FROM {tbl} WHERE {where} LIMIT 5", tuple(params)
             )
             samples = [str(r.get(self.column)) for r in sample_rows]
         return {"passed": count == 0, "violation_count": count, "sample_values": samples}
@@ -111,9 +115,10 @@ class ReferentialRule(ValidationRule):
         samples = []
         if count > 0:
             sample_rows = db.execute_query(
-                f"SELECT TOP 5 t.{col} FROM {tbl} t "
+                f"SELECT t.{col} FROM {tbl} t "
                 f"LEFT JOIN {ref_tbl} r ON t.{col} = r.{ref_col} "
-                f"WHERE r.{ref_col} IS NULL AND t.{col} IS NOT NULL"
+                f"WHERE r.{ref_col} IS NULL AND t.{col} IS NOT NULL "
+                f"LIMIT 5"
             )
             samples = [str(r.get(self.column)) for r in sample_rows]
         return {"passed": count == 0, "violation_count": count, "sample_values": samples}
@@ -144,8 +149,8 @@ class FreshnessRule(ValidationRule):
         max_age_hours = int(self.params.get("max_age_hours", 24))
         rows = db.execute_query(
             f"SELECT COUNT(*) AS cnt FROM {tbl} "
-            f"WHERE {col} >= DATEADD(HOUR, ?, SYSUTCDATETIME())",
-            (-max_age_hours,),
+            f"WHERE {col} >= NOW() - INTERVAL '%s hours'",
+            (max_age_hours,),
         )
         count = rows[0]["cnt"] if rows else 0
         passed = count > 0

@@ -12,7 +12,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from sentinel.api.dependencies import get_state
-from sentinel.api.routes import chaos, dashboard, governance, health, incidents, jobs, validation
+from sentinel.api.routes import (
+    chaos,
+    dashboard,
+    governance,
+    health,
+    incidents,
+    jobs,
+    performance,
+    training,
+    validation,
+)
 from sentinel.core.logging import setup_logging
 
 setup_logging()
@@ -41,11 +51,11 @@ async def _monitor_loop(state) -> None:
                         dedup_key=f"health_{alert['metric']}",
                     )
 
-            # Healthcare metrics check
+            # Pipeline metrics check
             try:
-                hc_metrics = state.healthcare.collect_metrics()
-                hc_alerts = state.healthcare.evaluate_thresholds(hc_metrics)
-                for alert in hc_alerts:
+                pl_metrics = state.pipeline.collect_metrics()
+                pl_alerts = state.pipeline.evaluate_thresholds(pl_metrics)
+                for alert in pl_alerts:
                     if alert["level"] == "critical":
                         state.incidents.create(
                             incident_type=alert["metric"],
@@ -55,10 +65,10 @@ async def _monitor_loop(state) -> None:
                                 f" (threshold: {alert['threshold']})"
                             ),
                             severity="critical",
-                            dedup_key=f"healthcare_{alert['metric']}",
+                            dedup_key=f"pipeline_{alert['metric']}",
                         )
             except Exception:
-                logger.warning("Healthcare metrics collection failed", exc_info=True)
+                logger.warning("Pipeline metrics collection failed", exc_info=True)
 
             # Auto-remediate if enabled
             if state.config.monitor.auto_remediate:
@@ -78,16 +88,16 @@ async def lifespan(app: FastAPI):
     """Start background tasks on startup, clean up on shutdown."""
     state = get_state()
 
-    # Wait for SQL Server to be ready
-    logger.info("Waiting for SQL Server...")
+    # Wait for PostgreSQL to be ready
+    logger.info("Waiting for PostgreSQL...")
     for attempt in range(30):
         if state.db.test_connection():
-            logger.info("SQL Server connected.")
+            logger.info("PostgreSQL connected.")
             break
-        logger.info("SQL Server not ready (attempt %d/30)...", attempt + 1)
+        logger.info("PostgreSQL not ready (attempt %d/30)...", attempt + 1)
         await asyncio.sleep(2)
     else:
-        logger.error("Could not connect to SQL Server after 30 attempts")
+        logger.error("Could not connect to PostgreSQL after 30 attempts")
 
     # Start background tasks
     monitor_task = asyncio.create_task(_monitor_loop(state))
@@ -104,8 +114,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SQL Server Sentinel",
-    description="Production SQL Server monitoring, chaos engineering, and incident response",
+    title="Sport-Suite Sentinel",
+    description=(
+        "Production monitoring, chaos engineering, and incident response "
+        "for the Sport-Suite data platform"
+    ),
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -118,6 +131,8 @@ app.include_router(validation.router)
 app.include_router(chaos.router)
 app.include_router(dashboard.router)
 app.include_router(governance.router)
+app.include_router(training.router)
+app.include_router(performance.router)
 
 # Static files
 WEB_DIR = os.path.join(os.path.dirname(__file__), "..", "web")
@@ -134,4 +149,4 @@ def serve_dashboard():
     index_path = os.path.join(TEMPLATE_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"message": "SQL Server Sentinel API", "docs": "/docs"}
+    return {"message": "Sport-Suite Sentinel API", "docs": "/docs"}

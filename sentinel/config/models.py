@@ -8,35 +8,41 @@ from pydantic import BaseModel, Field
 
 
 class DatabaseConfig(BaseModel):
-    host: str = "sqlserver"
-    port: int = 1433
-    name: str = "SentinelDB"
-    user: str = "sa"
+    host: str = "postgres"
+    port: int = 5432
+    name: str = "sentinel"
+    user: str = "sentinel"
     password: str = ""
-    driver: str = "ODBC Driver 18 for SQL Server"
-    trust_cert: bool = True
     connect_timeout: int = 10
     query_timeout: int = 30
 
 
 class ThresholdConfig(BaseModel):
+    # DB health
     cpu_percent_warning: float = 70.0
     cpu_percent_critical: float = 90.0
     memory_percent_warning: float = 75.0
     memory_percent_critical: float = 90.0
-    blocking_chain_warning: int = 2
-    blocking_chain_critical: int = 5
-    long_query_seconds_warning: int = 30
-    long_query_seconds_critical: int = 120
     connection_count_warning: int = 80
     connection_count_critical: int = 150
-    tempdb_usage_mb_warning: float = 500.0
-    tempdb_usage_mb_critical: float = 1000.0
-    # Healthcare thresholds
-    claim_rejection_rate_warning: float = 5.0
-    claim_rejection_rate_critical: float = 15.0
-    generic_dispensing_rate_warning: float = 80.0  # alert if below
-    pdc_adherence_warning: float = 0.80  # CMS Star threshold
+    long_query_seconds_warning: int = 30
+    long_query_seconds_critical: int = 120
+    lock_wait_warning: int = 5
+    lock_wait_critical: int = 15
+    dead_tuple_ratio_warning: float = 10.0
+    dead_tuple_ratio_critical: float = 25.0
+    # Sport-suite domain
+    win_rate_7d_warning: float = 55.0
+    win_rate_7d_critical: float = 50.0
+    line_snapshot_volume_warning: int = 10000
+    line_snapshot_volume_critical: int = 5000
+    prediction_staleness_hours: float = 4.0
+    feature_null_rate_warning: float = 5.0
+    feature_null_rate_critical: float = 15.0
+    conviction_locked_pct_warning: float = 25.0
+    api_response_ms_warning: float = 5000.0
+    api_response_ms_critical: float = 15000.0
+    book_coverage_warning: int = 5
 
 
 class MonitorConfig(BaseModel):

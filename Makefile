@@ -1,4 +1,4 @@
-.PHONY: up down build reset test lint fmt chaos-random validate status logs shell-db
+.PHONY: up down build reset test lint fmt chaos-random validate status logs shell-db seed
 
 up:
 	docker compose up -d
@@ -26,16 +26,19 @@ fmt:
 	black sentinel/ tests/
 
 chaos-random:
-	curl -s -X POST http://localhost:8000/api/chaos/random | python -m json.tool
+	curl -s -X POST http://localhost:8000/api/chaos/random | python3 -m json.tool
 
 validate:
-	curl -s -X POST http://localhost:8000/api/validation/run | python -m json.tool
+	curl -s -X POST http://localhost:8000/api/validation/run | python3 -m json.tool
 
 status:
-	curl -s http://localhost:8000/api/health | python -m json.tool
+	curl -s http://localhost:8000/api/health | python3 -m json.tool
 
 logs:
 	docker compose logs -f sentinel
 
 shell-db:
-	docker compose exec sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -d SentinelDB -C
+	docker compose exec postgres psql -U sentinel -d sentinel
+
+seed:
+	docker compose exec postgres psql -U sentinel -d sentinel -f /docker-entrypoint-initdb.d/08_seed_initial_data.sql

@@ -15,7 +15,7 @@ SQL_DIR = Path(__file__).resolve().parent.parent.parent / "sql"
 def load_sql(relative_path: str) -> str:
     """Load a SQL file relative to the sql/ directory.
 
-    Example: load_sql("dmv/active_queries.sql")
+    Example: load_sql("pgstat/active_queries.sql")
     """
     full_path = (SQL_DIR / relative_path).resolve()
     if not full_path.is_relative_to(SQL_DIR.resolve()):
@@ -25,6 +25,10 @@ def load_sql(relative_path: str) -> str:
     return full_path.read_text()
 
 
-def load_dmv(name: str) -> str:
-    """Load a DMV query by name (without .sql extension)."""
-    return load_sql(f"dmv/{name}.sql")
+def load_pgstat(name: str) -> str:
+    """Load a pg_stat query by name (without .sql extension)."""
+    return load_sql(f"pgstat/{name}.sql")
+
+
+# Keep backward-compatible alias during migration
+load_dmv = load_pgstat

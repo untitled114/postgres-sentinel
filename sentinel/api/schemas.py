@@ -33,9 +33,11 @@ class HealthSnapshot(BaseModel):
     memory_used_mb: float | None = None
     memory_total_mb: float | None = None
     connection_count: int | None = None
-    blocking_count: int | None = None
+    lock_wait_count: int | None = None
     long_query_count: int | None = None
-    tempdb_used_mb: float | None = None
+    dead_tuple_ratio: float | None = None
+    cache_hit_ratio: float | None = None
+    avg_query_ms: float | None = None
     status: str = "unknown"
     alerts: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -183,13 +185,13 @@ class DashboardResponse(BaseModel):
     validation: dict[str, Any] = Field(default_factory=dict)
     chaos_scenarios: list[dict[str, Any]] = Field(default_factory=list)
     postmortems: list[dict[str, Any]] = Field(default_factory=list)
-    healthcare: dict[str, Any] = Field(default_factory=dict)
+    pipeline: dict[str, Any] = Field(default_factory=dict)
 
 
 # --- Governance ---
 class CatalogEntry(BaseModel):
     id: int | None = None
-    schema_name: str = "dbo"
+    schema_name: str = "public"
     table_name: str
     column_name: str | None = None
     data_type: str | None = None
@@ -233,22 +235,3 @@ class PhiScanResponse(BaseModel):
     columns_scanned: int
     phi_pii_classified: int
     scanned_at: str
-
-
-class MaskedPatientResponse(BaseModel):
-    member_id: str | None = None
-    first_name: str | None = None
-    last_name: str | None = None
-    date_of_birth: str | None = None
-    ssn_last_four: str | None = None
-    phone: str | None = None
-    email: str | None = None
-    address_line1: str | None = None
-    city: str | None = None
-    state_code: str | None = None
-    zip_code: str | None = None
-    plan_type: str | None = None
-    group_number: str | None = None
-    effective_date: str | None = None
-    termination_date: str | None = None
-    is_active: bool | None = None

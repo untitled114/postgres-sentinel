@@ -1,26 +1,103 @@
 jobs:
   - name: "health_snapshot"
     schedule_cron: "@every 30s"
-    sql_inline: "EXEC sp_capture_health_snapshot"
+    sql_inline: "SELECT * FROM fn_capture_health_snapshot()"
     enabled: false
     timeout_seconds: 15
     description: "Disabled — monitor loop captures snapshots. Enable only if monitor is off."
 
   - name: "stale_session_cleanup"
     schedule_cron: "*/5 * * * *"
-    sql_inline: "EXEC sp_cleanup_stale_sessions @idle_minutes = 60"
+    sql_inline: "SELECT * FROM fn_cleanup_stale_sessions(60)"
     enabled: true
     timeout_seconds: 30
-    description: "Kill idle sessions older than 60 minutes"
+    description: "Terminate idle sessions older than 60 minutes"
+
+  - name: "pipeline_metrics_rollup"
+    schedule_cron: "0 * * * *"
+    sql_inline: >
+      INSERT INTO pipeline_metrics_hourly (hour, predictions_count, avg_edge, avg_p_over)
+      SELECT
+        date_trunc('hour', created_at) AS hour,
+        COUNT(*) AS predictions_count,
+        AVG(edge_pct) AS avg_edge,
+        AVG(p_over) AS avg_p_over
+      FROM predictions
+      WHERE created_at >= NOW() - INTERVAL '2 hours'
+      GROUP BY date_trunc('hour', created_at)
+      ON CONFLICT (hour) DO UPDATE SET
+        predictions_count = EXCLUDED.predictions_count,
+        avg_edge = EXCLUDED.avg_edge,
+        avg_p_over = EXCLUDED.avg_p_over
+    enabled: true
+    timeout_seconds: 30
+    description: "Hourly rollup of prediction metrics for dashboard trending"
+
+  - name: "model_performance_daily"
+    schedule_cron: "0 10 * * *"
+    sql_inline: >
+      INSERT INTO model_performance (report_date, market, model_version, total_picks,
+        wins, losses, win_rate, avg_edge)
+      SELECT
+        CURRENT_DATE - 1 AS report_date,
+        ph.market,
+        ph.model_version,
+        COUNT(*) AS total_picks,
+        SUM(CASE WHEN ph.result = 'win' THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN ph.result = 'loss' THEN 1 ELSE 0 END) AS losses,
+        ROUND(100.0 * SUM(CASE WHEN ph.result = 'win' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1),
+        ROUND(AVG(ph.edge_pct), 2)
+      FROM pick_history ph
+      WHERE ph.game_date = CURRENT_DATE - 1
+        AND ph.result IS NOT NULL
+      GROUP BY ph.market, ph.model_version
+      ON CONFLICT (report_date, market, model_version) DO UPDATE SET
+        total_picks = EXCLUDED.total_picks,
+        wins = EXCLUDED.wins,
+        losses = EXCLUDED.losses,
+        win_rate = EXCLUDED.win_rate,
+        avg_edge = EXCLUDED.avg_edge
+    enabled: true
+    timeout_seconds: 60
+    description: "Daily model performance aggregation (runs at 10 AM UTC)"
+
+  - name: "dim_player_scd2"
+    schedule_cron: "0 3 * * *"
+    sql_inline: "SELECT * FROM fn_dim_player_scd2()"
+    enabled: true
+    timeout_seconds: 180
+    description: "SCD Type 2 merge for player dimension (runs at 3 AM UTC)"
+
+  - name: "api_health_check"
+    schedule_cron: "*/5 * * * *"
+    sql_inline: >
+      UPDATE api_health_log
+      SET checked_at = NOW()
+      WHERE id IN (
+        SELECT id FROM api_health_log
+        WHERE checked_at < NOW() - INTERVAL '10 minutes'
+        ORDER BY checked_at ASC
+        LIMIT 7
+      )
+    enabled: true
+    timeout_seconds: 30
+    description: "Refresh API health status for all sportsbook endpoints"
 
   - name: "snapshot_retention"
     schedule_cron: "*/30 * * * *"
     sql_inline: >
       DELETE FROM health_snapshots
-      WHERE captured_at < DATEADD(HOUR, -24, SYSUTCDATETIME())
+      WHERE captured_at < NOW() - INTERVAL '24 hours'
     enabled: true
     timeout_seconds: 30
     description: "Purge health snapshots older than 24 hours"
+
+  - name: "governance_catalog_scan"
+    schedule_cron: "0 6 * * 1"
+    sql_inline: "SELECT 1"
+    enabled: false
+    timeout_seconds: 60
+    description: "Governance: schema scan for sensitive data classification (runs via Python engine)"
 
   - name: "validation_run"
     schedule_cron: "*/10 * * * *"
@@ -28,68 +105,3 @@ jobs:
     enabled: false
     timeout_seconds: 120
     description: "Data validation (runs via Python engine, not raw SQL)"
-
-  # --- ETL Jobs ---
-  - name: "etl_daily_order_summary"
-    schedule_cron: "0 1 * * *"
-    sql_inline: "EXEC sp_etl_daily_order_summary"
-    enabled: true
-    timeout_seconds: 60
-    description: "ETL: aggregate orders into daily summary (runs at 1 AM UTC)"
-
-  - name: "etl_customer_health"
-    schedule_cron: "0 2 * * *"
-    sql_inline: "EXEC sp_etl_customer_health"
-    enabled: true
-    timeout_seconds: 120
-    description: "ETL: recompute customer health scores via MERGE (runs at 2 AM UTC)"
-
-  - name: "etl_incident_metrics"
-    schedule_cron: "0 * * * *"
-    sql_inline: "EXEC sp_etl_incident_metrics @hours_back = 1"
-    enabled: true
-    timeout_seconds: 30
-    description: "ETL: roll up incident data into hourly metrics for SLA reporting"
-
-  # --- Healthcare ETL Jobs ---
-  - name: "etl_claim_ingestion"
-    schedule_cron: "*/15 * * * *"
-    sql_inline: "SELECT 1"
-    enabled: false
-    timeout_seconds: 120
-    description: "ETL: ingest pharmacy claims from staging (runs via Python engine with batch_id)"
-
-  - name: "etl_dim_patient_scd2"
-    schedule_cron: "0 3 * * *"
-    sql_inline: "EXEC sp_etl_dim_patient_scd2"
-    enabled: true
-    timeout_seconds: 180
-    description: "ETL: SCD Type 2 merge for patient dimension (runs at 3 AM UTC)"
-
-  - name: "etl_patient_adherence"
-    schedule_cron: "0 4 * * 1"
-    sql_inline: "EXEC sp_etl_patient_adherence"
-    enabled: true
-    timeout_seconds: 300
-    description: "ETL: calculate PDC adherence metrics (runs at 4 AM UTC every Monday)"
-
-  - name: "etl_pharmacy_fill_summary"
-    schedule_cron: "0 1 * * *"
-    sql_inline: "EXEC sp_etl_pharmacy_fill_summary"
-    enabled: true
-    timeout_seconds: 120
-    description: "ETL: aggregate daily pharmacy fill summaries (runs at 1 AM UTC)"
-
-  - name: "maintenance_update_statistics"
-    schedule_cron: "0 5 * * 0"
-    sql_inline: "EXEC sp_maintenance_update_statistics @sample_percent = 50"
-    enabled: true
-    timeout_seconds: 600
-    description: "Maintenance: update statistics for all user tables (runs at 5 AM UTC Sundays)"
-
-  - name: "governance_catalog_scan"
-    schedule_cron: "0 6 * * 1"
-    sql_inline: "SELECT 1"
-    enabled: false
-    timeout_seconds: 60
-    description: "Governance: schema scan for PHI classification (runs via Python engine)"

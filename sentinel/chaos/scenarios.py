@@ -1,4 +1,4 @@
-"""Built-in chaos scenarios that simulate production problems."""
+"""Chaos scenarios targeting real Sport-Suite tables in sportsuite DB."""
 
 from __future__ import annotations
 
@@ -22,137 +22,25 @@ class ChaosScenario:
         raise NotImplementedError
 
 
-class LongRunningQuery(ChaosScenario):
-    """Simulate a query that runs for a long time, consuming resources."""
+# ---------------------------------------------------------------------------
+# Infrastructure
+# ---------------------------------------------------------------------------
 
+
+class LongRunningQuery(ChaosScenario):
     name = "Long Running Query"
-    description = "Runs a WAITFOR + heavy computation to simulate a stuck query"
+    description = "Runs pg_sleep(45) to simulate a stuck query"
     severity = "medium"
 
     def execute(self, db: ConnectionManager) -> dict[str, Any]:
         try:
-            db.execute_nonquery("WAITFOR DELAY '00:00:45'")
-            return {"triggered": True, "detail": "45-second blocking query executed"}
+            db.execute_query("SELECT pg_sleep(45)")
+            return {"triggered": True, "detail": "45-second pg_sleep executed"}
         except DatabaseQueryError as e:
             return {"triggered": True, "detail": f"Long query started (may timeout): {e}"}
 
 
-class DeadlockSimulation(ChaosScenario):
-    """Create conditions that can lead to deadlocks."""
-
-    name = "Deadlock"
-    description = "Creates competing transactions to trigger a deadlock"
-    severity = "high"
-
-    def execute(self, db: ConnectionManager) -> dict[str, Any]:
-        # Insert two rows, then update in crossed order from different connections
-        try:
-            db.execute_nonquery(
-                "IF NOT EXISTS (SELECT 1 FROM customers WHERE email = 'deadlock_a@chaos.test') "
-                "INSERT INTO customers (name, email, region) "
-                "VALUES ('Deadlock A', 'deadlock_a@chaos.test', 'CHAOS')"
-            )
-            db.execute_nonquery(
-                "IF NOT EXISTS (SELECT 1 FROM customers WHERE email = 'deadlock_b@chaos.test') "
-                "INSERT INTO customers (name, email, region) "
-                "VALUES ('Deadlock B', 'deadlock_b@chaos.test', 'CHAOS')"
-            )
-            return {
-                "triggered": True,
-                "detail": "Deadlock-prone rows created. Concurrent updates may deadlock.",
-            }
-        except DatabaseQueryError as e:
-            return {"triggered": False, "detail": str(e)}
-
-
-class DataCorruption(ChaosScenario):
-    """Introduce invalid data to trigger validation failures."""
-
-    name = "Data Corruption"
-    description = "Inserts rows with invalid/NULL values to trigger validation alerts"
-    severity = "high"
-
-    def execute(self, db: ConnectionManager) -> dict[str, Any]:
-        corruptions = []
-
-        # Negative order total
-        db.execute_nonquery(
-            "INSERT INTO orders (customer_id, total_amount, status) "
-            "VALUES (1, -999.99, 'corrupted')"
-        )
-        corruptions.append("Negative order total (-999.99)")
-
-        # Orphaned order item (non-existent order)
-        db.execute_nonquery(
-            "SET IDENTITY_INSERT orders ON; "
-            "IF NOT EXISTS (SELECT 1 FROM orders WHERE id = 99999) "
-            "INSERT INTO orders (id, customer_id, total_amount, status) "
-            "VALUES (99999, 1, 0, 'phantom'); "
-            "SET IDENTITY_INSERT orders OFF; "
-            "INSERT INTO order_items (order_id, product, quantity, unit_price) "
-            "VALUES (99999, 'CHAOS_ITEM', 0, -1.00)"
-        )
-        corruptions.append("Zero-quantity item with negative price")
-
-        # Duplicate email
-        db.execute_nonquery(
-            "INSERT INTO customers (name, email, region) "
-            "VALUES ('Chaos Clone', 'customer1@example.com', 'CHAOS')"
-        )
-        corruptions.append("Duplicate customer email")
-
-        return {"triggered": True, "detail": f"Corruptions injected: {corruptions}"}
-
-
-class OrphanedRecords(ChaosScenario):
-    """Create orphaned records that break referential integrity."""
-
-    name = "Orphaned Records"
-    description = "Creates order items pointing to non-existent orders"
-    severity = "medium"
-
-    def execute(self, db: ConnectionManager) -> dict[str, Any]:
-        # Temporarily disable FK to insert orphan, then re-enable
-        try:
-            db.execute_nonquery("ALTER TABLE order_items NOCHECK CONSTRAINT ALL")
-            db.execute_nonquery(
-                "INSERT INTO order_items (order_id, product, quantity, unit_price) "
-                "VALUES (88888, 'ORPHAN_PRODUCT', 1, 10.00)"
-            )
-            db.execute_nonquery("ALTER TABLE order_items CHECK CONSTRAINT ALL")
-            return {
-                "triggered": True,
-                "detail": "Orphaned order_item created (order_id=88888 doesn't exist)",
-            }
-        except DatabaseQueryError as e:
-            # Re-enable constraints on failure
-            try:
-                db.execute_nonquery("ALTER TABLE order_items CHECK CONSTRAINT ALL")
-            except DatabaseQueryError:
-                pass
-            return {"triggered": False, "detail": str(e)}
-
-
-class JobFailure(ChaosScenario):
-    """Simulate a scheduled job failure."""
-
-    name = "Job Failure"
-    description = "Inserts a fake failed job run record"
-    severity = "low"
-
-    def execute(self, db: ConnectionManager) -> dict[str, Any]:
-        db.execute_nonquery(
-            "INSERT INTO job_runs (job_name, status, error_message, completed_at, duration_ms) "
-            "VALUES ('chaos_simulated_job', 'failed', "
-            "'CHAOS: Simulated job failure — disk I/O timeout', "
-            "SYSUTCDATETIME(), 15000)"
-        )
-        return {"triggered": True, "detail": "Failed job record inserted for 'chaos_simulated_job'"}
-
-
 class ConnectionFlood(ChaosScenario):
-    """Open many connections to stress connection pool limits."""
-
     name = "Connection Flood"
     description = "Opens 20 concurrent connections to stress the pool"
     severity = "high"
@@ -165,9 +53,9 @@ class ConnectionFlood(ChaosScenario):
                 conn = db.get_connection()
                 conns.append(conn)
                 opened += 1
-            return {"triggered": True, "detail": f"Opened {opened} connections (will auto-close)"}
+            return {"triggered": True, "detail": f"Opened {opened} connections"}
         except DatabaseQueryError as e:
-            return {"triggered": True, "detail": f"Opened {opened} connections before error: {e}"}
+            return {"triggered": True, "detail": f"Opened {opened} before error: {e}"}
         finally:
             for c in conns:
                 try:
@@ -176,134 +64,197 @@ class ConnectionFlood(ChaosScenario):
                     pass
 
 
-class ClaimVolumeSpike(ChaosScenario):
-    """Simulate a sudden flood of pharmacy claims with mixed statuses."""
+# ---------------------------------------------------------------------------
+# Pipeline Failures
+# ---------------------------------------------------------------------------
 
-    name = "Claim Volume Spike"
-    description = (
-        "Bulk inserts ~200 pharmacy claims with mixed statuses to simulate processing flood"
-    )
-    severity = "high"
+
+class DagOverlap(ChaosScenario):
+    """Simulate overlapping pipeline runs."""
+
+    name = "DAG Overlap"
+    description = "Creates 2 concurrent running pipeline_runs for same date"
+    severity = "medium"
 
     def execute(self, db: ConnectionManager) -> dict[str, Any]:
+        import uuid
+
         try:
-            db.execute_nonquery("""
-                DECLARE @i INT = 0;
-                WHILE @i < 200
-                BEGIN
-                    INSERT INTO pharmacy_claims
-                        (claim_number, patient_id, medication_id, pharmacy_id,
-                         prescriber_id, service_date, quantity_dispensed,
-                         days_supply, ingredient_cost, dispensing_fee,
-                         copay_amount, plan_paid_amount, claim_status)
-                    VALUES (
-                        'CHAOS-' + RIGHT('000000' + CAST(@i AS VARCHAR), 6),
-                        (SELECT TOP 1 id FROM patients ORDER BY NEWID()),
-                        (SELECT TOP 1 id FROM medications ORDER BY NEWID()),
-                        (SELECT TOP 1 id FROM pharmacies ORDER BY NEWID()),
-                        (SELECT TOP 1 id FROM providers ORDER BY NEWID()),
-                        CAST(GETDATE() AS DATE),
-                        CASE WHEN @i % 5 = 0 THEN 999 ELSE 30 END,
-                        30,
-                        ROUND(RAND() * 500, 2),
-                        2.50,
-                        ROUND(RAND() * 50, 2),
-                        ROUND(RAND() * 400, 2),
-                        CASE
-                            WHEN @i % 7 = 0 THEN 'rejected'
-                            WHEN @i % 11 = 0 THEN 'pending'
-                            ELSE 'paid'
-                        END
-                    );
-                    SET @i = @i + 1;
-                END
-                """)
-            return {
-                "triggered": True,
-                "detail": "Injected ~200 pharmacy claims (mix of paid/rejected/pending)",
-            }
+            for i in range(2):
+                db.execute_nonquery(
+                    "INSERT INTO axiom.pipeline_runs "
+                    "(run_id, run_date, run_number, run_type, started_at, status, "
+                    " summary) "
+                    "VALUES (%s, CURRENT_DATE, %s, 'full', NOW() - INTERVAL '%s minutes', "
+                    "'running', '{}'::jsonb)",
+                    (str(uuid.uuid4()), 99 + i, str(i * 10)),
+                )
+            return {"triggered": True, "detail": "2 concurrent pipeline_runs created"}
         except DatabaseQueryError as e:
-            return {"triggered": True, "detail": f"Claim spike started (partial): {e}"}
+            return {"triggered": True, "detail": f"DAG overlap partial: {e}"}
 
 
-class PhiExposureEvent(ChaosScenario):
-    """Simulate a suspicious PHI access pattern — bulk patient record access."""
+class ExtractorDefaultInjection(ChaosScenario):
+    """Write a pipeline_run with 0 feature count to trigger regression alert."""
 
-    name = "PHI Exposure"
-    description = "Inserts 100 suspicious PHI access records from a single user — HIPAA audit event"
+    name = "Extractor Default Injection"
+    description = "Writes a pipeline_run with 0 feature count"
     severity = "high"
 
     def execute(self, db: ConnectionManager) -> dict[str, Any]:
+        import json
+        import uuid
+
         try:
-            db.execute_nonquery("""
-                DECLARE @i INT = 0;
-                WHILE @i < 100
-                BEGIN
-                    INSERT INTO phi_access_log
-                        (user_name, action, table_name, record_count,
-                         justification, access_time)
-                    VALUES (
-                        'chaos_user_suspect',
-                        'BULK_EXPORT',
-                        'patients',
-                        CAST(50 + @i AS INT),
-                        'CHAOS: Simulated suspicious bulk PHI access',
-                        DATEADD(SECOND, @i, SYSUTCDATETIME())
-                    );
-                    SET @i = @i + 1;
-                END
-                """)
-            return {
-                "triggered": True,
-                "detail": (
-                    "100 suspicious PHI access records inserted "
-                    "(single user bulk-exporting patient data)"
+            db.execute_nonquery(
+                "INSERT INTO axiom.pipeline_runs "
+                "(run_id, run_date, run_number, run_type, started_at, ended_at, "
+                " status, duration_ms, summary, anomalies) "
+                "VALUES (%s, CURRENT_DATE, 98, 'full', NOW(), NOW(), 'success', 1000, "
+                "%s, %s)",
+                (
+                    str(uuid.uuid4()),
+                    json.dumps({"feature_count": 0, "picks_generated": 0}),
+                    json.dumps([{
+                        "type": "feature_count_regression",
+                        "severity": "critical",
+                        "message": "CHAOS: Feature count forced to 0",
+                    }]),
                 ),
+            )
+            return {"triggered": True, "detail": "Pipeline run with 0 features injected"}
+        except DatabaseQueryError as e:
+            return {"triggered": False, "detail": str(e)}
+
+
+class LineIngestionDrop(ChaosScenario):
+    """Delete today's line snapshots to simulate ingestion failure."""
+
+    name = "Line Ingestion Drop"
+    description = "Deletes today's line snapshots"
+    severity = "high"
+
+    def execute(self, db: ConnectionManager) -> dict[str, Any]:
+        try:
+            affected = db.execute_nonquery(
+                "DELETE FROM intelligence.nba_line_snapshots "
+                "WHERE game_date = CURRENT_DATE"
+            )
+            return {"triggered": True, "detail": f"Deleted {affected} line snapshots from today"}
+        except DatabaseQueryError as e:
+            return {"triggered": True, "detail": f"Line drop partial: {e}"}
+
+
+# ---------------------------------------------------------------------------
+# Model Failures
+# ---------------------------------------------------------------------------
+
+
+class ModelFileMissing(ChaosScenario):
+    """Point model_registry pkl_path to a nonexistent file."""
+
+    name = "Model File Missing"
+    description = "Updates model_registry pkl_path to nonexistent file"
+    severity = "high"
+
+    def execute(self, db: ConnectionManager) -> dict[str, Any]:
+        try:
+            affected = db.execute_nonquery(
+                "UPDATE axiom.model_registry "
+                "SET pkl_path = '/nonexistent/chaos_test_model.pkl' "
+                "WHERE status = 'production' "
+                "AND market = 'POINTS'"
+            )
+            return {
+                "triggered": affected > 0,
+                "detail": f"Updated {affected} POINTS production model to missing pkl path",
             }
         except DatabaseQueryError as e:
-            return {"triggered": True, "detail": f"PHI exposure event started: {e}"}
+            return {"triggered": False, "detail": str(e)}
 
 
-class FormularyChangeCascade(ChaosScenario):
-    """Simulate mid-year formulary upheaval — tier changes + prior auth requirements."""
+class ConvictionCollapse(ChaosScenario):
+    """Downgrade all LOCKED picks to SKIP for today."""
 
-    name = "Formulary Change"
-    description = (
-        "Moves 10 popular generics from tier 1 to tier 3 "
-        "and sets requires_prior_auth — simulates mid-year formulary upheaval"
-    )
+    name = "Conviction Collapse"
+    description = "Downgrades all LOCKED picks to SKIP"
+    severity = "high"
+
+    def execute(self, db: ConnectionManager) -> dict[str, Any]:
+        try:
+            affected = db.execute_nonquery(
+                "UPDATE axiom.axiom_conviction "
+                "SET conviction_label = 'SKIP', conviction = 0.0 "
+                "WHERE conviction_label = 'LOCKED' AND run_date = CURRENT_DATE"
+            )
+            return {"triggered": True, "detail": f"Downgraded {affected} LOCKED → SKIP"}
+        except DatabaseQueryError as e:
+            return {"triggered": True, "detail": f"Conviction collapse partial: {e}"}
+
+
+class WinRateCrash(ChaosScenario):
+    """Inject 7 days of losing predictions to trigger retraining."""
+
+    name = "Win Rate Crash"
+    description = "Inserts 7 days of 45% win rate predictions"
+    severity = "high"
+
+    def execute(self, db: ConnectionManager) -> dict[str, Any]:
+        try:
+            injected = 0
+            for day_offset in range(7):
+                for i in range(20):
+                    is_hit = i < 9  # 9/20 = 45%
+                    db.execute_nonquery(
+                        "INSERT INTO axiom.nba_prediction_history "
+                        "(run_date, run_number, run_timestamp, player_name, stat_type, "
+                        " model_version, line, p_over, edge, book, is_hit, actual_result) "
+                        "VALUES (CURRENT_DATE - %s, 1, NOW(), %s, 'POINTS', 'xl', "
+                        " 25.5, 0.65, 0.10, 'DraftKings', %s, %s)",
+                        (
+                            day_offset,
+                            f"Chaos Player {i}",
+                            is_hit,
+                            26.0 if is_hit else 20.0,
+                        ),
+                    )
+                    injected += 1
+            return {"triggered": True, "detail": f"Injected {injected} predictions (45% WR x 7 days)"}
+        except DatabaseQueryError as e:
+            return {"triggered": True, "detail": f"Win rate crash partial: {e}"}
+
+
+# ---------------------------------------------------------------------------
+# Data Quality
+# ---------------------------------------------------------------------------
+
+
+class PredictionStaleness(ChaosScenario):
+    """Delete today's predictions to trigger freshness alert."""
+
+    name = "Prediction Staleness"
+    description = "Deletes today's predictions"
     severity = "medium"
 
     def execute(self, db: ConnectionManager) -> dict[str, Any]:
         try:
-            result = db.execute_query("""
-                UPDATE TOP (10) medications
-                SET formulary_tier = 3,
-                    requires_prior_auth = 1
-                OUTPUT INSERTED.drug_name
-                WHERE formulary_tier = 1
-                  AND dea_schedule = 0
-                """)
-            affected = [r["drug_name"] for r in result] if result else []
-            return {
-                "triggered": True,
-                "detail": (
-                    f"Moved {len(affected)} medications to tier 3 "
-                    f"with prior auth required: {affected[:5]}"
-                ),
-            }
+            affected = db.execute_nonquery(
+                "DELETE FROM axiom.nba_prediction_history "
+                "WHERE run_date = CURRENT_DATE"
+            )
+            return {"triggered": True, "detail": f"Deleted {affected} predictions from today"}
         except DatabaseQueryError as e:
-            return {"triggered": True, "detail": f"Formulary cascade started: {e}"}
+            return {"triggered": True, "detail": f"Prediction stale partial: {e}"}
 
 
 BUILTIN_SCENARIOS: dict[str, type[ChaosScenario]] = {
     "Long Running Query": LongRunningQuery,
-    "Deadlock": DeadlockSimulation,
-    "Data Corruption": DataCorruption,
-    "Orphaned Records": OrphanedRecords,
-    "Job Failure": JobFailure,
     "Connection Flood": ConnectionFlood,
-    "Claim Volume Spike": ClaimVolumeSpike,
-    "PHI Exposure": PhiExposureEvent,
-    "Formulary Change": FormularyChangeCascade,
+    "DAG Overlap": DagOverlap,
+    "Extractor Default Injection": ExtractorDefaultInjection,
+    "Line Ingestion Drop": LineIngestionDrop,
+    "Model File Missing": ModelFileMissing,
+    "Conviction Collapse": ConvictionCollapse,
+    "Win Rate Crash": WinRateCrash,
+    "Prediction Staleness": PredictionStaleness,
 }
